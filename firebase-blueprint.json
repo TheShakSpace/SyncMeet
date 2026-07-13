@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "Represents a SyncMeet registered user account",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 256 },
+        "photoURL": { "type": "string", "maxLength": 2048 },
+        "bio": { "type": "string", "maxLength": 500 },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "joinedAt"]
+    },
+    "meeting": {
+      "title": "Meeting",
+      "description": "Represents a video conferencing meeting session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9\\-]+$" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "hostId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "hostName": { "type": "string", "maxLength": 100 },
+        "scheduledTime": { "type": "string", "format": "date-time" },
+        "durationMinutes": { "type": "integer" },
+        "status": { "type": "string", "enum": ["upcoming", "active", "ended"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "hostId", "hostName", "scheduledTime", "durationMinutes", "status", "createdAt"]
+    },
+    "participant": {
+      "title": "Participant",
+      "description": "A live participant inside an active meeting room",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 2048 },
+        "audioEnabled": { "type": "boolean" },
+        "videoEnabled": { "type": "boolean" },
+        "screenShareEnabled": { "type": "boolean" },
+        "isHost": { "type": "boolean" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "audioEnabled", "videoEnabled", "screenShareEnabled", "isHost", "joinedAt"]
+    },
+    "message": {
+      "title": "Message",
+      "description": "A real-time chat message sent within a meeting session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "senderPhotoURL": { "type": "string", "maxLength": 2048 },
+        "text": { "type": "string", "maxLength": 2000 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isSystem": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "senderName", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Stores user profiles"
+    },
+    "/meetings/{meetingId}": {
+      "schema": "meeting",
+      "description": "Stores core meeting objects"
+    },
+    "/meetings/{meetingId}/participants/{participantId}": {
+      "schema": "participant",
+      "description": "Stores active users in a meeting (sub-collection)"
+    },
+    "/meetings/{meetingId}/messages/{messageId}": {
+      "schema": "message",
+      "description": "Stores real-time chat logs for a specific meeting"
+    }
+  }
+}

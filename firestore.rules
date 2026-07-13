@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. GLOBAL SAFETY NET: Default-Deny Catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. CORE SECURITY PRIMITIVES & HELPERS
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    // 3. SCHEMA VALIDATION BLUEPRINTS (Anti-Update-Gap)
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'joinedAt'])
+        && data.keys().size() <= 8
+        && data.uid is string && data.uid.size() <= 128
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 100
+        && data.email is string && data.email.size() <= 256;
+    }
+    
+    function isValidMeeting(data) {
+      return data.keys().hasAll(['id', 'title', 'hostId', 'hostName', 'scheduledTime', 'durationMinutes', 'status', 'createdAt'])
+        && data.keys().size() <= 9
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 150
+        && data.hostId is string && data.hostId.size() <= 128
+        && data.hostName is string && data.hostName.size() <= 100
+        && data.durationMinutes is int
+        && data.status in ['upcoming', 'active', 'ended'];
+    }
+    
+    function isValidParticipant(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'audioEnabled', 'videoEnabled', 'screenShareEnabled', 'isHost', 'joinedAt'])
+        && data.keys().size() <= 9
+        && data.uid is string && data.uid.size() <= 128
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.audioEnabled is bool
+        && data.videoEnabled is bool
+        && data.screenShareEnabled is bool
+        && data.isHost is bool;
+    }
+    
+    function isValidMessage(data) {
+      return data.keys().hasAll(['id', 'senderId', 'senderName', 'text', 'timestamp'])
+        && data.keys().size() <= 7
+        && data.id is string && data.id.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.text is string && data.text.size() <= 2000;
+    }
+
+    // 4. COLLECTION ROUTING & ACTIONS
+    
+    // USERS DIRECTORY (PII Restricted)
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUser(incoming());
+      allow update: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUser(incoming()) && incoming().uid == existing().uid && incoming().joinedAt == existing().joinedAt;
+      allow delete: if false;
+    }
+    
+    // MEETINGS DIRECTORY (Master Gate Pattern)
+    match /meetings/{meetingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(meetingId) && meetingId == incoming().id && incoming().hostId == request.auth.uid && isValidMeeting(incoming());
+      allow update: if isSignedIn() && isValidId(meetingId) && isValidMeeting(incoming()) && incoming().id == existing().id && incoming().hostId == existing().hostId;
+      allow delete: if false;
+      
+      // PARTICIPANTS LIST (Atomicity & Identity Bind)
+      match /participants/{participantId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(participantId) && participantId == request.auth.uid && isValidParticipant(incoming()) && exists(/databases/$(database)/documents/meetings/$(meetingId));
+        allow update: if isSignedIn() && isValidId(participantId) && participantId == request.auth.uid && isValidParticipant(incoming()) && incoming().uid == existing().uid && incoming().isHost == existing().isHost;
+        allow delete: if isSignedIn() && participantId == request.auth.uid;
+      }
+      
+      // CHAT MESSAGES (Immutable & Append-Only)
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming()) && incoming().senderId == request.auth.uid && (incoming().isSystem == null || incoming().isSystem == false) && exists(/databases/$(database)/documents/meetings/$(meetingId));
+        allow update: if false; // Append-only (anti-tamper)
+        allow delete: if false; // Immutable logs
+      }
+    }
+  }
+}

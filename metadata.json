@@ -1,0 +1,11 @@
+{
+  "name": "SyncMeet",
+  "description": "A premium video-conferencing workspace and scheduling portal inspired by Linear and Google Meet, featuring real-time state synchronization, interactive chat, and dynamic participant video indicators.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
