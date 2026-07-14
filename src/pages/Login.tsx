@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMeeting } from '../context/MeetingContext';
-import { Mail, ArrowRight, Video, Sparkles } from 'lucide-react';
+import { Mail, ArrowRight, Video, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Login: React.FC = () => {
@@ -48,187 +48,226 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div id="login-screen" className="min-h-screen bg-[#0B1017] flex items-stretch overflow-hidden">
+    <div id="login-screen" className="min-h-screen bg-[#F7F8FA] flex items-stretch overflow-hidden selection:bg-blue-500/15 selection:text-blue-600">
       
       {/* Left Column: Form Panel */}
-      <div className="w-full lg:w-[45%] flex flex-col justify-between p-8 md:p-16 z-10 bg-[#0B1017] border-r border-white/5">
+      <div className="w-full lg:w-[45%] flex flex-col justify-between p-8 md:p-16 z-10 bg-white border-r border-[#E5E7EB] relative">
+        {/* Background decoration (extremely subtle) */}
+        <div className="absolute inset-0 bg-[radial-gradient(#E5E7EB_1px,transparent_1px)] [background-size:16px_16px] opacity-40 pointer-events-none" />
         
         {/* Branding header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/25 border border-blue-500/30 flex items-center justify-center text-blue-400">
-            <Video size={20} className="animate-pulse" />
+        <div className="flex items-center gap-2.5 relative z-10">
+          <div className="w-9 h-9 rounded-2xl bg-[#2563EB] flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+            <Video size={16} />
           </div>
           <div>
-            <h1 className="text-xl font-display font-bold tracking-tight text-white">SyncMeet</h1>
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Workspace Sync</span>
+            <h1 className="text-base font-display font-bold text-gray-900 tracking-tight leading-none">SyncMeet</h1>
+            <span className="text-[9px] text-[#6B7280] uppercase tracking-wider font-semibold">Workspace Suite</span>
           </div>
         </div>
 
         {/* Central Auth Card */}
-        <div className="my-auto max-w-md w-full space-y-8">
+        <div className="my-auto max-w-md w-full space-y-8 relative z-10">
           <div className="space-y-3">
-            <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-white">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-[#2563EB] text-[11px] font-semibold">
+              <Sparkles size={12} />
+              <span>Next-Generation Video Rooms</span>
+            </div>
+            
+            <h2 className="text-3xl md:text-4xl font-display font-extrabold tracking-tight text-gray-900 leading-tight">
               Connect securely. <br />
-              <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+              <span className="text-[#2563EB]">
                 Sync instantly.
               </span>
             </h2>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              SyncMeet brings high-fidelity audio, crystal clear video, and real-time synchronization together in one premium workspace.
+            <p className="text-[#6B7280] text-xs leading-relaxed font-medium">
+              A meticulously designed video-conferencing workspace and scheduling portal, engineered for modern collaborative work. No installations required.
             </p>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             {/* Google OAuth Button */}
-            <button
+            <motion.button
+              whileHover={{ y: -1 }}
+              whileTap={{ y: 1 }}
               onClick={handleGoogleSignIn}
-              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 bg-[#141C27]/80 hover:bg-[#141C27] border border-white/10 hover:border-white/20 rounded-xl text-sm font-semibold transition-all duration-200 shadow-xl group hover:scale-[1.01]"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-gray-50 border border-[#E5E7EB] rounded-2xl text-xs font-bold text-gray-800 transition-all shadow-sm group cursor-pointer"
             >
-              <svg className="w-5 h-5 group-hover:scale-105 transition-transform" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 group-hover:scale-105 transition-transform" viewBox="0 0 24 24">
                 <path
                   fill="#EA4335"
                   d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.579-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.256-3.133C18.29 1.844 15.49 1 12.24 1c-6.077 0-11 4.923-11 11s4.923 11 11 11c6.34 0 10.55-4.462 10.55-10.74 0-.723-.075-1.275-.165-1.685H12.24z"
                 />
               </svg>
-              <span>Continue with Google</span>
-            </button>
+              <span>Continue with Google Account</span>
+            </motion.button>
 
             <div className="relative flex items-center justify-center py-2">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/5"></div>
+                <div className="w-full border-t border-[#E5E7EB]"></div>
               </div>
-              <span className="relative px-3 text-xs uppercase tracking-widest text-gray-500 bg-[#0B1017] font-mono">or</span>
+              <span className="relative px-3.5 text-[10px] uppercase tracking-wider text-[#6B7280] bg-white font-mono font-bold">or use instant pass</span>
             </div>
 
             {/* Email form login */}
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl font-medium">
+                <div className="px-4 py-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-2xl font-semibold">
                   {error}
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs uppercase tracking-wider text-gray-400 font-mono">Display Name (Optional)</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono">Display Name (Optional)</label>
                 <div className="relative">
+                  <span className="absolute left-4 top-3.5 text-gray-400">
+                    <User size={15} />
+                  </span>
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. John Doe"
-                    className="w-full px-4 py-3 bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-sm focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
+                    placeholder="e.g. Liam Sterling"
+                    className="w-full pl-11 pr-4 py-3 bg-white border border-[#E5E7EB] rounded-2xl text-xs focus:border-[#2563EB] focus:ring-4 focus:ring-blue-500/5 outline-none transition-all placeholder:text-gray-400 font-medium"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs uppercase tracking-wider text-gray-400 font-mono">Email Address</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono">Work Email Address</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-3.5 text-gray-600">
-                    <Mail size={16} />
+                  <span className="absolute left-4 top-3.5 text-gray-400">
+                    <Mail size={15} />
                   </span>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@workplace.com"
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-sm focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
+                    className="w-full pl-11 pr-4 py-3 bg-white border border-[#E5E7EB] rounded-2xl text-xs focus:border-[#2563EB] focus:ring-4 focus:ring-blue-500/5 outline-none transition-all placeholder:text-gray-400 font-medium"
                     required
                   />
                 </div>
               </div>
 
-              <button
+              <motion.button
                 type="submit"
+                whileHover={{ y: -1 }}
+                whileTap={{ y: 1 }}
                 disabled={isSubmitting}
-                className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-blue-900/20 disabled:opacity-50 hover:scale-[1.01]"
+                className="w-full py-3.5 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/10 disabled:opacity-50 cursor-pointer"
               >
-                <span>{isSubmitting ? 'Authenticating...' : 'Enter Workspace'}</span>
-                <ArrowRight size={16} />
-              </button>
+                <span>{isSubmitting ? 'Syncing Profile...' : 'Enter SyncMeet Workspace'}</span>
+                <ArrowRight size={15} />
+              </motion.button>
             </form>
           </div>
         </div>
 
         {/* Footer info */}
-        <div className="text-center md:text-left text-xs text-gray-500 space-y-1">
-          <p>© 2026 SyncMeet Inc. All rights reserved.</p>
-          <p className="font-mono">Secure TLS & AES-256 simulated signal encryption.</p>
+        <div className="text-left text-[11px] text-[#6B7280] space-y-1.5 relative z-10 border-t border-gray-50 pt-5">
+          <p className="font-semibold text-gray-700">© 2026 SyncMeet, Inc. Built for modern high-performance teams.</p>
+          <div className="flex items-center gap-1.5 text-gray-500 font-medium">
+            <ShieldCheck size={13} className="text-[#10B981]" />
+            <span>Encrypted signaling channel with multi-datacenter fallback.</span>
+          </div>
         </div>
       </div>
 
-      {/* Right Column: Premium Visual Panel */}
-      <div className="hidden lg:flex flex-1 bg-radial from-[#121B2A] to-[#0B1017] p-16 items-center justify-center relative overflow-hidden">
-        {/* Background Gradients */}
-        <div className="absolute w-[400px] h-[400px] rounded-full bg-blue-500/10 blur-[120px] top-1/4 left-1/4 animate-pulse"></div>
-        <div className="absolute w-[300px] h-[300px] rounded-full bg-indigo-500/10 blur-[100px] bottom-1/4 right-1/4 animate-pulse"></div>
+      {/* Right Column: Premium Minimal Visual Panel */}
+      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-[#F3F4F6] via-[#F9FAFB] to-[#F3F4F6] p-16 items-center justify-center relative overflow-hidden">
+        
+        {/* Gorgeous Subtle background grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#E5E7EB_1px,transparent_1px),linear-gradient(to_bottom,#E5E7EB_1px,transparent_1px)] [background-size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-60"></div>
+        
+        {/* Soft background glow circles (No glowing neon, just soft subtle light blobs) */}
+        <div className="absolute w-[450px] h-[450px] rounded-full bg-blue-500/5 blur-[120px] top-1/4 left-1/4 animate-pulse"></div>
+        <div className="absolute w-[350px] h-[350px] rounded-full bg-emerald-500/5 blur-[100px] bottom-1/4 right-1/4 animate-pulse"></div>
 
-        {/* Floating elements inside visual panel */}
-        <div className="relative w-full max-w-lg aspect-square flex items-center justify-center">
+        {/* Interactive mock UI card */}
+        <div className="relative w-full max-w-lg">
           
-          {/* Main Simulated Meet UI Graphic */}
           <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="w-full aspect-[4/3] glass-premium rounded-3xl p-6 flex flex-col justify-between relative"
+            initial={{ scale: 0.96, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full bg-white border border-[#E5E7EB] rounded-[24px] p-6 flex flex-col justify-between relative shadow-xl shadow-gray-200/50"
           >
             {/* Top Bar of meet room mockup */}
-            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500/80"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500/80"></span>
-                <span className="text-xs text-gray-400 font-mono ml-2">sync-room-session</span>
+                <span className="w-3 h-3 rounded-full bg-[#EF4444]/15 border border-[#EF4444]/30 flex items-center justify-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]"></span>
+                </span>
+                <span className="text-xs text-gray-500 font-mono font-semibold">sync-room-921</span>
               </div>
-              <span className="text-[10px] text-blue-400 uppercase tracking-widest font-mono bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <Sparkles size={10} />
-                LIVE PREVIEW
+              <span className="text-[10px] text-[#2563EB] uppercase tracking-wider font-bold bg-blue-50 border border-blue-100 px-3 py-1 rounded-full flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB] animate-pulse"></span>
+                ACTIVE OFFICE
               </span>
             </div>
 
-            {/* Simulated Grid of webcams */}
-            <div className="grid grid-cols-2 gap-4 my-6 flex-1">
-              {/* Box 1 */}
-              <div className="glass rounded-2xl relative overflow-hidden flex items-center justify-center bg-cover bg-center group" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80')` }}>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-                <div className="absolute bottom-3 left-3 px-2 py-1 bg-black/40 backdrop-blur-md rounded-lg text-[10px] font-medium border border-white/5 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                  Alex Rivera
+            {/* Simulated Grid of webcams - Soft Premium Light Theme style */}
+            <div className="grid grid-cols-2 gap-4 my-6">
+              
+              {/* Card 1 */}
+              <div className="aspect-[4/3] bg-[#F9FAFB] rounded-2xl relative overflow-hidden flex items-center justify-center border border-gray-100 group shadow-sm">
+                <img 
+                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80" 
+                  alt="Aria"
+                  className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-102"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent"></div>
+                <div className="absolute bottom-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-xl text-[10px] font-bold text-gray-800 border border-white/20 flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span>
+                  Aria Sterling (Host)
                 </div>
-                <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
-                  <div className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></div>
+                <div className="absolute top-3 right-3 w-6 h-6 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></div>
                 </div>
               </div>
 
-              {/* Box 2 */}
-              <div className="glass rounded-2xl relative overflow-hidden flex items-center justify-center bg-cover bg-center" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80')` }}>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-                <div className="absolute bottom-3 left-3 px-2 py-1 bg-black/40 backdrop-blur-md rounded-lg text-[10px] font-medium border border-white/5 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
-                  Sarah Connor
+              {/* Card 2 */}
+              <div className="aspect-[4/3] bg-[#F9FAFB] rounded-2xl relative overflow-hidden flex items-center justify-center border border-gray-100 group shadow-sm">
+                <img 
+                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80" 
+                  alt="Marcus"
+                  className="w-full h-full object-cover opacity-95 transition-transform duration-500 group-hover:scale-102"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent"></div>
+                <div className="absolute bottom-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-xl text-[10px] font-bold text-gray-800 border border-white/20 flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                  Marcus Vance
                 </div>
               </div>
+
             </div>
 
             {/* Bottom Toolbar Mockup */}
-            <div className="flex items-center justify-center gap-4 border-t border-white/5 pt-4">
-              <span className="w-9 h-9 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center justify-center text-xs">🎙️</span>
-              <span className="w-9 h-9 rounded-full bg-white/5 text-white border border-white/10 flex items-center justify-center text-xs">📷</span>
-              <span className="w-9 h-9 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center text-xs">🖥️</span>
+            <div className="flex items-center justify-center gap-3 border-t border-gray-100 pt-4">
+              <div className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-100 hover:bg-gray-100 flex items-center justify-center text-xs text-gray-600 transition-all cursor-pointer">🎙️</div>
+              <div className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-100 hover:bg-gray-100 flex items-center justify-center text-xs text-gray-600 transition-all cursor-pointer">📷</div>
+              <div className="w-9 h-9 rounded-xl bg-blue-500 text-white flex items-center justify-center text-xs transition-all cursor-pointer shadow-md shadow-blue-500/10">🖥️</div>
             </div>
+
           </motion.div>
 
-          {/* Aesthetic Floating Circles / Signals */}
-          <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full border border-white/5 bg-gradient-to-tr from-indigo-500/10 to-transparent flex items-center justify-center text-indigo-400 font-mono text-[10px] backdrop-blur-sm animate-bounce">
-            60 FPS
-          </div>
-          <div className="absolute -bottom-6 -left-6 px-4 py-2.5 rounded-2xl glass border border-blue-500/20 text-xs flex items-center gap-3 shadow-2xl animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
-            <span className="font-mono text-gray-300">Signal: Excellent (12ms)</span>
-          </div>
+          {/* Aesthetic floating info card */}
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3, duration: 0.5 }}
+            className="absolute -bottom-5 -right-5 px-4.5 py-3 rounded-2xl bg-white border border-[#E5E7EB] text-[11px] font-semibold text-gray-800 flex items-center gap-3 shadow-lg"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] flex items-center justify-center relative">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] absolute animate-ping opacity-60"></span>
+            </span>
+            <span className="font-mono text-[#6B7280]">Signal: <strong className="text-gray-900 font-semibold">14ms latency</strong></span>
+          </motion.div>
+
         </div>
       </div>
+
     </div>
   );
 };
