@@ -75,11 +75,16 @@ export const MeetingRoom: React.FC = () => {
   const {
     currentUser,
     activeMeeting,
+    activeParticipants,
     chatMessages,
     sendChatMessage,
     leaveMeeting,
     joinMeeting,
-    addNotification
+    addNotification,
+    toggleMic,
+    toggleCamera,
+    toggleScreenShare,
+    toggleHandRaise
   } = useMeeting();
 
   // Drawers and layout states
@@ -258,6 +263,146 @@ export const MeetingRoom: React.FC = () => {
     }));
   }, [isSelfMicOn, isSelfCamOn, raisedHandSelf]);
 
+  // Synchronize local participants list with live backend activeParticipants
+  useEffect(() => {
+    if (activeParticipants && activeParticipants.length > 0) {
+      setParticipants(prev => {
+        // Map active participants
+        const mappedReal = activeParticipants.map(p => {
+          const isSelf = p.uid === currentUser?.uid;
+          const role = isSelf 
+            ? 'Project Lead (You)' 
+            : p.isHost 
+              ? 'Host Coordinator' 
+              : 'Product Partner';
+          return {
+            uid: isSelf ? 'self' : p.uid,
+            displayName: p.displayName,
+            role,
+            avatar: p.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${p.uid}`,
+            audioEnabled: p.audioEnabled,
+            videoEnabled: p.videoEnabled,
+            isSpeaking: p.isSpeaking || false,
+            isHost: p.isHost,
+            handRaised: p.handRaised || false,
+            connectionQuality: (isSelf ? 'excellent' : 'good') as 'excellent' | 'good' | 'poor'
+          };
+        });
+
+        // To keep the room beautifully populated for demo, let's keep the system/mock participants 
+        // that do not overlap with our real participants.
+        const defaultMocks = [
+          {
+            uid: 'aria',
+            displayName: 'Aria Rose',
+            role: 'Lead Product Designer',
+            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
+            audioEnabled: true,
+            videoEnabled: true,
+            isSpeaking: false,
+            isHost: false,
+            handRaised: false,
+            connectionQuality: 'excellent' as const
+          },
+          {
+            uid: 'marcus',
+            displayName: 'Marcus Vance',
+            role: 'Staff Systems Architect',
+            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+            audioEnabled: false,
+            videoEnabled: true,
+            isSpeaking: false,
+            isHost: false,
+            handRaised: false,
+            connectionQuality: 'excellent' as const
+          },
+          {
+            uid: 'liam',
+            displayName: 'Liam Sterling',
+            role: 'Frontend Engineer',
+            avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
+            audioEnabled: true,
+            videoEnabled: false,
+            isSpeaking: false,
+            isHost: false,
+            handRaised: false,
+            connectionQuality: 'good' as const
+          },
+          {
+            uid: 'sarah',
+            displayName: 'Sarah Jenkins',
+            role: 'Security Compliance',
+            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
+            audioEnabled: false,
+            videoEnabled: false,
+            isSpeaking: false,
+            isHost: false,
+            handRaised: false,
+            connectionQuality: 'good' as const
+          },
+          {
+            uid: 'james',
+            displayName: 'James Chen',
+            role: 'Senior Backend Architect',
+            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80',
+            audioEnabled: true,
+            videoEnabled: true,
+            isSpeaking: false,
+            isHost: false,
+            handRaised: false,
+            connectionQuality: 'excellent' as const
+          }
+        ];
+
+        // Filter mocks to only include those that don't match any real participant's uid/displayName
+        const activeMocks = defaultMocks.filter(m => 
+          !mappedReal.some(r => r.displayName.toLowerCase() === m.displayName.toLowerCase() || r.uid === m.uid)
+        );
+
+        // Combine
+        return [...mappedReal, ...activeMocks];
+      });
+    }
+  }, [activeParticipants, currentUser]);
+
+  // Synchronize local chat with live backend chat messages
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      setChatItems(prev => {
+        const mappedReal = chatMessages.map(msg => {
+          const isMe = msg.senderId === currentUser?.uid;
+          return {
+            id: msg.id,
+            senderId: isMe ? 'self' : msg.senderId,
+            senderName: msg.senderName,
+            senderPhotoURL: msg.senderPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.senderName}`,
+            text: msg.text,
+            timestamp: msg.timestamp
+          };
+        });
+
+        // Combine default onboarding messages with mapped ones, preventing duplicate ids
+        const defaults = [
+          { id: 'm1', senderId: 'aria', senderName: 'Aria Rose', senderPhotoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80', text: 'Hey team, I uploaded the latest visual designs for Sprint 2! They are ready to view in the Files tab.', timestamp: '10:14 AM' },
+          { id: 'm2', senderId: 'marcus', senderName: 'Marcus Vance', senderPhotoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', text: 'Excellent. Let me cross-verify the layout with the schema rules on the server side.', timestamp: '10:15 AM' },
+          { id: 'm3', senderId: 'liam', senderName: 'Liam Sterling', senderPhotoURL: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', text: 'Can we also test the drawing whiteboard with the new styling brush today?', timestamp: '10:16 AM' }
+        ];
+
+        // Filter out any default that might conflict or exist
+        const nonConflictingDefaults = defaults.filter(d => 
+          !mappedReal.some(r => r.text === d.text)
+        );
+
+        return [...nonConflictingDefaults, ...mappedReal];
+      });
+      
+      // If the chat drawer isn't active, raise an unread badge
+      if (activeDrawer !== 'chat') {
+        setUnreadCount(u => u + 1);
+      }
+    }
+  }, [chatMessages, currentUser, activeDrawer]);
+
   // Auto-join meeting room if refreshing on route directly
   useEffect(() => {
     if (currentUser && !activeMeeting && roomId) {
@@ -400,22 +545,18 @@ export const MeetingRoom: React.FC = () => {
     }, 3500);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const userMsg = {
-      id: Math.random().toString(),
-      senderId: 'self',
-      senderName: currentUser?.displayName || 'Product Partner',
-      senderPhotoURL: currentUser?.photoURL || 'https://api.dicebear.com/7.x/adventurer/svg?seed=self',
-      text: inputText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setChatItems(prev => [...prev, userMsg]);
     const typedText = inputText;
     setInputText('');
+
+    try {
+      await sendChatMessage(typedText);
+    } catch (err) {
+      console.error("Failed to send real-time message:", err);
+    }
     
     // Trigger mock smart typing reply
     simulateBotResponse(typedText);
@@ -1383,7 +1524,7 @@ export const MeetingRoom: React.FC = () => {
             whileTap={{ scale: 0.95 }}
             onClick={() => {
               setIsSelfMicOn(!isSelfMicOn);
-              addNotification(isSelfMicOn ? "Microphone signal muted." : "Microphone signal live.");
+              toggleMic();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
               isSelfMicOn 
@@ -1401,7 +1542,7 @@ export const MeetingRoom: React.FC = () => {
             whileTap={{ scale: 0.95 }}
             onClick={() => {
               setIsSelfCamOn(!isSelfCamOn);
-              addNotification(isSelfCamOn ? "Camera feed deactivated." : "Camera feed active.");
+              toggleCamera();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
               isSelfCamOn 
@@ -1419,7 +1560,7 @@ export const MeetingRoom: React.FC = () => {
             whileTap={{ scale: 0.95 }}
             onClick={() => {
               setIsScreenSharing(!isScreenSharing);
-              addNotification(!isScreenSharing ? "Initiated wireless screen presentation." : "Stopped screen presentation.");
+              toggleScreenShare();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
               isScreenSharing 
@@ -1439,7 +1580,7 @@ export const MeetingRoom: React.FC = () => {
             whileTap={{ scale: 0.95 }}
             onClick={() => {
               setRaisedHandSelf(!raisedHandSelf);
-              addNotification(!raisedHandSelf ? "Raised your hand." : "Lowered your hand.");
+              toggleHandRaise();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
               raisedHandSelf 

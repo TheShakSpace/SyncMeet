@@ -59,6 +59,7 @@ interface MeetingContextType {
   toggleMic: () => void;
   toggleCamera: () => void;
   toggleScreenShare: () => void;
+  toggleHandRaise: () => void;
   sendChatMessage: (text: string) => Promise<void>;
   
   // Profile / Settings actions
@@ -742,6 +743,28 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addNotification(newStatus ? "Sharing screen" : "Stopped screen share");
   };
 
+  // In-meeting actions: Hand raise
+  const toggleHandRaise = async () => {
+    if (!currentUser || !activeMeeting) return;
+
+    const newStatus = !activeParticipants.find(p => p.uid === currentUser.uid)?.handRaised;
+
+    if (isFirebaseConfigured) {
+      try {
+        await updateDoc(doc(db, 'meetings', activeMeeting.id, 'participants', currentUser.uid), {
+          handRaised: newStatus
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setActiveParticipants(prev => 
+        prev.map(p => p.uid === currentUser.uid ? { ...p, handRaised: newStatus } : p)
+      );
+    }
+    addNotification(newStatus ? "Hand Raised" : "Hand Lowered");
+  };
+
   // In-meeting actions: Chat
   const sendChatMessage = async (text: string) => {
     if (!currentUser || !activeMeeting || !text.trim()) return;
@@ -838,6 +861,7 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       toggleMic,
       toggleCamera,
       toggleScreenShare,
+      toggleHandRaise,
       sendChatMessage,
       updateProfile,
       updatePreferences,

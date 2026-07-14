@@ -42,6 +42,7 @@ export interface Participant {
   isHost: boolean;
   joinedAt: string;
   isSpeaking?: boolean;
+  handRaised?: boolean;
 }
 
 export interface ChatMessage {
