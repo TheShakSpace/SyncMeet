@@ -549,7 +549,10 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             videoEnabled: data.videoEnabled,
             screenShareEnabled: data.screenShareEnabled,
             isHost: data.isHost,
-            joinedAt: new Date(data.joinedAt?.seconds * 1000 || Date.now()).toISOString()
+            joinedAt: new Date(data.joinedAt?.seconds * 1000 || Date.now()).toISOString(),
+            peerId: data.peerId,
+            handRaised: data.handRaised,
+            isSpeaking: data.isSpeaking
           });
         });
         // Combine with default system participants to make the room always feel rich and crowded!

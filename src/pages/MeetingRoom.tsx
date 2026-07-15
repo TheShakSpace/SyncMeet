@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useMeeting } from '../context/MeetingContext';
 import { 
@@ -46,6 +46,15 @@ import {
   Type
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLocalMedia } from '../hooks/useLocalMedia';
+import { usePeer } from '../hooks/usePeer';
+import { useRemotePeers } from '../hooks/useRemotePeers';
+import { useScreenShare } from '../hooks/useScreenShare';
+import { useChat } from '../hooks/useChat';
+import { useFiles } from '../hooks/useFiles';
+import { useWhiteboard } from '../hooks/useWhiteboard';
+import { MeetingVideo } from '../components/MeetingVideo';
+import { meetingConnectionService } from '../services/meetingConnectionService';
 
 // Typing indicator helper
 const TypingIndicator: React.FC = () => (
@@ -84,7 +93,8 @@ export const MeetingRoom: React.FC = () => {
     toggleMic,
     toggleCamera,
     toggleScreenShare,
-    toggleHandRaise
+    toggleHandRaise,
+    isFirebaseEnabled
   } = useMeeting();
 
   // Drawers and layout states
@@ -109,30 +119,175 @@ export const MeetingRoom: React.FC = () => {
   // Typing simulator state
   const [typingUser, setTypingUser] = useState<string | null>(null);
 
-  // File states (with image previews)
-  const [sharedFiles, setSharedFiles] = useState([
-    { id: '1', name: 'Sprint_2_DesignSystem_v4.png', size: '3.6 MB', uploader: 'Aria Rose', date: '10:15 AM', type: 'image', previewUrl: 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=120&q=80' },
-    { id: '2', name: 'SyncMeet_ProductSpecs.pdf', size: '4.2 MB', uploader: 'Marcus Vance', date: '09:42 AM', type: 'pdf', previewUrl: '' },
-    { id: '3', name: 'Interface_Whiteboard_Draft.jpg', size: '1.2 MB', uploader: 'Sarah Jenkins', date: '09:12 AM', type: 'image', previewUrl: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=120&q=80' },
-  ]);
+  // Floating reactions state
+  const [reactions, setReactions] = useState<{ id: string; emoji: string; x: number; delay: number }[]>([]);
 
   // Whiteboard drawing states
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#2563EB');
   const [brushSize, setBrushSize] = useState(4);
   const [drawingTool, setDrawingTool] = useState<'pen' | 'eraser' | 'rect' | 'circle' | 'text'>('pen');
-  const [canvasHistory, setCanvasHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
   const [showTextInput, setShowTextInput] = useState(false);
   const [textInputPos, setTextInputPos] = useState({ x: 0, y: 0 });
   const [textValue, setTextValue] = useState('');
 
-  // Canvas drawing reference
-  const startPosRef = useRef<{ x: number; y: number } | null>(null);
-  const snapshotRef = useRef<ImageData | null>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // --- Live WebRTC multi-user integration ---
+  const {
+    localStream,
+    isMicOn,
+    isCameraOn,
+    mediaError,
+    isLocalSpeaking,
+    startLocalStream,
+    stopLocalStream,
+    toggleMic: toggleLocalMic,
+    toggleCamera: toggleLocalCamera
+  } = useLocalMedia({
+    initialMicOn: isSelfMicOn,
+    initialCameraOn: isSelfCamOn,
+    onToast: addNotification
+  });
+
+  const {
+    peer,
+    peerId,
+    initializePeer,
+    destroyPeer
+  } = usePeer({
+    userId: currentUser?.uid,
+    localStream,
+    onIncomingCall: (call) => answerIncomingCall(call),
+    onToast: addNotification
+  });
+
+  const {
+    remoteStreams,
+    speakingPeers,
+    callPeer,
+    answerIncomingCall,
+    cleanUpAllConnections,
+    replaceLocalVideoTrack
+  } = useRemotePeers({
+    peer,
+    localStream,
+    onToast: addNotification
+  });
+
+  // Collaborative Screen Share Hook
+  const {
+    screenStream,
+    isSharing: isLocalScreenSharing,
+    startScreenShare,
+    stopScreenShare
+  } = useScreenShare({
+    meetingId: roomId,
+    userId: currentUser?.uid,
+    localStream,
+    onReplaceVideoTrack: replaceLocalVideoTrack,
+    onRestoreWebcam: async () => {
+      await startLocalStream();
+    },
+    onToast: addNotification,
+    isFirebaseEnabled: isFirebaseEnabled
+  });
+
+  // Reactions Callback
+  const handleReactionReceived = useCallback((reaction: { id: string; emoji: string; userName: string }) => {
+    const x = Math.random() * 80 + 10;
+    const delay = Math.random() * 0.2;
+    setReactions(prev => [...prev, { id: reaction.id, emoji: reaction.emoji, x, delay }]);
+    setTimeout(() => {
+      setReactions(prev => prev.filter(r => r.id !== reaction.id));
+    }, 4000);
+  }, []);
+
+  // Collaborative Chat Hook
+  const {
+    sendMessage: sendChatMessageViaHook,
+    handleTyping,
+    sendReaction
+  } = useChat({
+    meetingId: roomId,
+    userId: currentUser?.uid,
+    userName: currentUser?.displayName,
+    userPhoto: currentUser?.photoURL,
+    onReactionReceived: handleReactionReceived,
+    isFirebaseEnabled: isFirebaseEnabled
+  });
+
+  // Collaborative File Sharing Hook
+  const {
+    files: sharedFiles,
+    isUploading: isFileUploading,
+    uploadFile
+  } = useFiles({
+    meetingId: roomId,
+    uploaderName: currentUser?.displayName || 'User',
+    onToast: addNotification,
+    isFirebaseEnabled: isFirebaseEnabled
+  });
+
+  // Collaborative Whiteboard Hook
+  const {
+    undo: handleWhiteboardUndo,
+    redo: handleWhiteboardRedo,
+    clearWhiteboard: handleWhiteboardClear,
+    canUndo,
+    canRedo
+  } = useWhiteboard({
+    meetingId: roomId,
+    canvasElement: canvasRef.current,
+    brushColor,
+    brushSize,
+    drawingTool,
+    onToast: addNotification,
+    isFirebaseEnabled: isFirebaseEnabled
+  });
+
+  // Automatically start local stream on load
+  useEffect(() => {
+    startLocalStream();
+    return () => {
+      stopLocalStream();
+      cleanUpAllConnections();
+      destroyPeer();
+    };
+  }, []);
+
+  // Sync toolbar states with actual WebRTC media states
+  useEffect(() => {
+    setIsSelfMicOn(isMicOn);
+  }, [isMicOn]);
+
+  useEffect(() => {
+    setIsSelfCamOn(isCameraOn);
+  }, [isCameraOn]);
+
+  // Synchronize Peer ID to Firestore
+  useEffect(() => {
+    if (peerId && roomId && currentUser?.uid) {
+      meetingConnectionService.registerPeerId(roomId, currentUser.uid, peerId);
+    }
+  }, [peerId, roomId, currentUser?.uid]);
+
+  // Automatically connect with new users in room
+  useEffect(() => {
+    if (activeParticipants && currentUser?.uid && peer && localStream) {
+      activeParticipants.forEach((p) => {
+        if (p.uid === currentUser.uid) return;
+        const remotePeerId = p.peerId;
+        if (remotePeerId) {
+          // Rule: smaller UID acts as caller to avoid double calling in mesh
+          const isCaller = currentUser.uid < p.uid;
+          if (isCaller) {
+            callPeer(remotePeerId);
+          }
+        }
+      });
+    }
+  }, [activeParticipants, currentUser?.uid, peer, localStream, callPeer]);
 
   // Simulated participants with beautiful profiles
   const [participants, setParticipants] = useState<MockParticipant[]>([
@@ -282,9 +437,10 @@ export const MeetingRoom: React.FC = () => {
             avatar: p.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${p.uid}`,
             audioEnabled: p.audioEnabled,
             videoEnabled: p.videoEnabled,
-            isSpeaking: p.isSpeaking || false,
+            isSpeaking: isSelf ? isLocalSpeaking : (speakingPeers[p.uid] || p.isSpeaking || false),
             isHost: p.isHost,
             handRaised: p.handRaised || false,
+            peerId: p.peerId,
             connectionQuality: (isSelf ? 'excellent' : 'good') as 'excellent' | 'good' | 'poor'
           };
         });
@@ -363,7 +519,7 @@ export const MeetingRoom: React.FC = () => {
         return [...mappedReal, ...activeMocks];
       });
     }
-  }, [activeParticipants, currentUser]);
+  }, [activeParticipants, currentUser, isLocalSpeaking, speakingPeers]);
 
   // Synchronize local chat with live backend chat messages
   useEffect(() => {
@@ -437,57 +593,6 @@ export const MeetingRoom: React.FC = () => {
     }
   }, [chatItems, activeDrawer]);
 
-  // Setup canvas drawings
-  useEffect(() => {
-    if (activeDrawer === 'whiteboard' && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        // Handle resizing based on parent container width/height
-        const resizeCanvas = () => {
-          const tempImg = canvas.toDataURL();
-          canvas.width = canvas.parentElement?.clientWidth || 500;
-          canvas.height = canvas.parentElement?.clientHeight || 450;
-          
-          // Re-draw temp image
-          const img = new Image();
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0);
-          };
-          img.src = tempImg;
-
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.strokeStyle = brushColor;
-          ctx.lineWidth = brushSize;
-        };
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        
-        // Initial snapshot
-        const initialImg = canvas.toDataURL();
-        if (canvasHistory.length === 0) {
-          setCanvasHistory([initialImg]);
-          setHistoryIndex(0);
-        }
-
-        return () => window.removeEventListener('resize', resizeCanvas);
-      }
-    }
-  }, [activeDrawer]);
-
-  // Update canvas properties
-  useEffect(() => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = drawingTool === 'eraser' ? '#FFFFFF' : brushColor;
-        ctx.lineWidth = brushSize;
-      }
-    }
-  }, [brushColor, brushSize, drawingTool]);
-
   // Soundwave mock simulation (Randomly toggle participant's active speaking highlight)
   useEffect(() => {
     const speakerInterval = setInterval(() => {
@@ -553,7 +658,7 @@ export const MeetingRoom: React.FC = () => {
     setInputText('');
 
     try {
-      await sendChatMessage(typedText);
+      await sendChatMessageViaHook(typedText);
     } catch (err) {
       console.error("Failed to send real-time message:", err);
     }
@@ -577,146 +682,6 @@ export const MeetingRoom: React.FC = () => {
     }
   };
 
-  // Canvas drawing functions
-  const saveCanvasState = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const state = canvas.toDataURL();
-    const newHistory = canvasHistory.slice(0, historyIndex + 1);
-    setCanvasHistory([...newHistory, state]);
-    setHistoryIndex(newHistory.length);
-  };
-
-  const handleUndo = () => {
-    if (historyIndex > 0) {
-      const prevIndex = historyIndex - 1;
-      setHistoryIndex(prevIndex);
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (canvas && ctx) {
-        const img = new Image();
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
-        };
-        img.src = canvasHistory[prevIndex];
-        addNotification("Whiteboard drawing undone");
-      }
-    }
-  };
-
-  const handleRedo = () => {
-    if (historyIndex < canvasHistory.length - 1) {
-      const nextIndex = historyIndex + 1;
-      setHistoryIndex(nextIndex);
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (canvas && ctx) {
-        const img = new Image();
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
-        };
-        img.src = canvasHistory[nextIndex];
-        addNotification("Whiteboard drawing redone");
-      }
-    }
-  };
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      setIsDrawing(true);
-      startPosRef.current = { x, y };
-      snapshotRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    }
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !startPosRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      if (drawingTool === 'pen' || drawingTool === 'eraser') {
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      } else if (drawingTool === 'rect' && snapshotRef.current) {
-        // Restore canvas to snap
-        ctx.putImageData(snapshotRef.current, 0, 0);
-        ctx.beginPath();
-        const width = x - startPosRef.current.x;
-        const height = y - startPosRef.current.y;
-        ctx.rect(startPosRef.current.x, startPosRef.current.y, width, height);
-        ctx.stroke();
-      } else if (drawingTool === 'circle' && snapshotRef.current) {
-        ctx.putImageData(snapshotRef.current, 0, 0);
-        ctx.beginPath();
-        const radius = Math.sqrt(Math.pow(x - startPosRef.current.x, 2) + Math.pow(y - startPosRef.current.y, 2));
-        ctx.arc(startPosRef.current.x, startPosRef.current.y, radius, 0, 2 * Math.PI);
-        ctx.stroke();
-      }
-    }
-  };
-
-  const stopDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDrawing) {
-      setIsDrawing(false);
-      const canvas = canvasRef.current;
-      if (canvas && drawingTool === 'text' && startPosRef.current) {
-        const rect = canvas.getBoundingClientRect();
-        setTextInputPos({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top
-        });
-        setShowTextInput(true);
-      } else {
-        saveCanvasState();
-      }
-    }
-  };
-
-  const handlePlaceText = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!textValue.trim()) {
-      setShowTextInput(false);
-      return;
-    }
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (canvas && ctx) {
-      ctx.font = `${brushSize * 4}px Inter, sans-serif`;
-      ctx.fillStyle = brushColor;
-      ctx.fillText(textValue, textInputPos.x, textInputPos.y);
-      setTextValue('');
-      setShowTextInput(false);
-      saveCanvasState();
-    }
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      saveCanvasState();
-      addNotification("Whiteboard cleared.");
-    }
-  };
-
   // File sharing drag/drop functions
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -735,36 +700,14 @@ export const MeetingRoom: React.FC = () => {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      const isImage = file.type.startsWith('image/');
-      const newFile = {
-        id: Math.random().toString(),
-        name: file.name,
-        size: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
-        uploader: currentUser?.displayName || 'User',
-        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: isImage ? 'image' : 'file',
-        previewUrl: isImage ? URL.createObjectURL(file) : ''
-      };
-      setSharedFiles(prev => [newFile, ...prev]);
-      addNotification(`File uploaded: ${file.name}`);
+      uploadFile(file);
     }
   };
 
   const handleManualUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const isImage = file.type.startsWith('image/');
-      const newFile = {
-        id: Math.random().toString(),
-        name: file.name,
-        size: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
-        uploader: currentUser?.displayName || 'User',
-        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: isImage ? 'image' : 'file',
-        previewUrl: isImage ? URL.createObjectURL(file) : ''
-      };
-      setSharedFiles(prev => [newFile, ...prev]);
-      addNotification(`Shared artifact: ${file.name}`);
+      uploadFile(file);
     }
   };
 
@@ -1000,27 +943,35 @@ export const MeetingRoom: React.FC = () => {
                       {/* Video feedback placeholder */}
                       {showActualVideoMockup ? (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          {/* Ambient high fidelity background color bleed */}
-                          <div className="absolute inset-0 bg-cover bg-center opacity-[0.04] filter blur-xl" style={{ backgroundImage: `url('${p.avatar}')` }} />
-                          <div className="text-center space-y-4">
-                            <motion.img 
-                              initial={{ scale: 0.95, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              src={p.avatar} 
-                              alt={p.displayName} 
-                              className="w-16 h-16 md:w-20 md:h-20 rounded-[20px] border border-gray-200/50 object-cover shadow-lg bg-gray-50"
-                              referrerPolicy="no-referrer"
-                            />
-                            {/* Live speaking voice decibel wave animation */}
-                            {p.isSpeaking && p.audioEnabled && (
-                              <div className="flex items-center justify-center gap-1.5 h-3">
-                                <span className="w-1 h-3 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite]" />
-                                <span className="w-1 h-4 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_100ms]" />
-                                <span className="w-1 h-2 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_200ms]" />
-                                <span className="w-1 h-3.5 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_300ms]" />
+                          {p.uid === 'self' && localStream ? (
+                            <MeetingVideo stream={localStream} isMuted={true} isSelf={true} className="absolute inset-0 w-full h-full rounded-[24px]" />
+                          ) : p.uid !== 'self' && remoteStreams[p.uid] ? (
+                            <MeetingVideo stream={remoteStreams[p.uid]} isMuted={false} isSelf={false} className="absolute inset-0 w-full h-full rounded-[24px]" />
+                          ) : (
+                            <>
+                              {/* Ambient high fidelity background color bleed */}
+                              <div className="absolute inset-0 bg-cover bg-center opacity-[0.04] filter blur-xl" style={{ backgroundImage: `url('${p.avatar}')` }} />
+                              <div className="text-center space-y-4 z-10">
+                                <motion.img 
+                                  initial={{ scale: 0.95, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  src={p.avatar} 
+                                  alt={p.displayName} 
+                                  className="w-16 h-16 md:w-20 md:h-20 rounded-[20px] border border-gray-200/50 object-cover shadow-lg bg-gray-50"
+                                  referrerPolicy="no-referrer"
+                                />
+                                {/* Live speaking voice decibel wave animation */}
+                                {p.isSpeaking && p.audioEnabled && (
+                                  <div className="flex items-center justify-center gap-1.5 h-3">
+                                    <span className="w-1 h-3 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite]" />
+                                    <span className="w-1 h-4 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_100ms]" />
+                                    <span className="w-1 h-2 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_200ms]" />
+                                    <span className="w-1 h-3.5 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite_300ms]" />
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
+                            </>
+                          )}
                         </div>
                       ) : (
                         /* Camera Muted Visual State */
@@ -1203,12 +1154,31 @@ export const MeetingRoom: React.FC = () => {
                       <div ref={messagesEndRef} />
                     </div>
 
+                    {/* Collaborative Reactions mini panel */}
+                    <div className="flex gap-1 px-3 py-1.5 border-t border-gray-100 bg-white/50 justify-between items-center shrink-0">
+                      <span className="text-[9px] font-bold text-gray-400 font-mono">REACTION:</span>
+                      <div className="flex gap-1.5">
+                        {['❤️', '👍', '🔥', '🎉', '😂', '😮'].map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => sendReaction(emoji)}
+                            className="text-sm hover:scale-125 hover:rotate-6 active:scale-90 transition-all p-0.5 cursor-pointer"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Chat Text Input field */}
                     <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-100 bg-gray-50/50 flex gap-2 shrink-0">
                       <input
                         type="text"
                         value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
+                        onChange={(e) => {
+                          setInputText(e.target.value);
+                          handleTyping();
+                        }}
                         placeholder="Type WhatsApp-style huddle message..."
                         className="flex-1 px-4 py-2.5 bg-white border border-gray-200 focus:border-blue-500/50 outline-none rounded-xl text-xs placeholder:text-gray-400 transition-all text-gray-900 font-medium"
                       />
@@ -1371,16 +1341,16 @@ export const MeetingRoom: React.FC = () => {
                         <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#6B7280] font-mono">Tools</span>
                         <div className="flex gap-1.5">
                           <button
-                            onClick={handleUndo}
-                            disabled={historyIndex <= 0}
+                            onClick={handleWhiteboardUndo}
+                            disabled={!canUndo}
                             className="p-1 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent rounded transition-all cursor-pointer"
                             title="Undo"
                           >
                             <RotateCcw size={13} />
                           </button>
                           <button
-                            onClick={handleRedo}
-                            disabled={historyIndex >= canvasHistory.length - 1}
+                            onClick={handleWhiteboardRedo}
+                            disabled={!canRedo}
                             className="p-1 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent rounded transition-all cursor-pointer"
                             title="Redo"
                           >
@@ -1439,7 +1409,7 @@ export const MeetingRoom: React.FC = () => {
 
                       {/* Clear Canvas */}
                       <button 
-                        onClick={clearCanvas}
+                        onClick={handleWhiteboardClear}
                         className="w-full mt-1.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-sm"
                       >
                         <Trash2 size={11} />
@@ -1451,17 +1421,12 @@ export const MeetingRoom: React.FC = () => {
                     <div className="flex-1 bg-white rounded-2xl relative overflow-hidden border border-gray-200 shadow-inner min-h-[300px]">
                       <canvas
                         ref={canvasRef}
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
                         className="absolute inset-0 w-full h-full cursor-crosshair"
                       />
 
                       {/* Floating Text input widget if 'text' tool was triggered */}
                       {showTextInput && (
-                        <form 
-                          onSubmit={handlePlaceText}
+                        <div 
                           style={{ left: textInputPos.x, top: textInputPos.y }}
                           className="absolute bg-white border border-gray-200 p-2 rounded-xl shadow-lg flex gap-1.5 z-30"
                         >
@@ -1473,13 +1438,7 @@ export const MeetingRoom: React.FC = () => {
                             placeholder="Press Enter to imprint..."
                             className="px-2.5 py-1 bg-gray-50 border border-gray-100 rounded text-[11px] outline-none text-gray-900 font-semibold"
                           />
-                          <button 
-                            type="submit"
-                            className="bg-blue-600 hover:bg-blue-700 text-white rounded p-1"
-                          >
-                            <Check size={11} />
-                          </button>
-                        </form>
+                        </div>
                       )}
 
                       <div className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-gray-900/80 backdrop-blur rounded-lg text-[8px] font-mono font-bold text-white uppercase tracking-wider pointer-events-none">
@@ -1523,7 +1482,7 @@ export const MeetingRoom: React.FC = () => {
             whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => {
-              setIsSelfMicOn(!isSelfMicOn);
+              toggleLocalMic();
               toggleMic();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
@@ -1541,7 +1500,7 @@ export const MeetingRoom: React.FC = () => {
             whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => {
-              setIsSelfCamOn(!isSelfCamOn);
+              toggleLocalCamera();
               toggleCamera();
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
@@ -1559,17 +1518,23 @@ export const MeetingRoom: React.FC = () => {
             whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => {
-              setIsScreenSharing(!isScreenSharing);
-              toggleScreenShare();
+              if (isLocalScreenSharing) {
+                stopScreenShare();
+                toggleScreenShare();
+              } else {
+                startScreenShare().then(() => {
+                  toggleScreenShare();
+                });
+              }
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
-              isScreenSharing 
+              isLocalScreenSharing 
                 ? 'bg-[#2563EB] text-white border-blue-500 shadow-md shadow-blue-500/10' 
                 : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
             }`}
-            title={isScreenSharing ? "Stop Screen Share" : "Share Workspace Screen"}
+            title={isLocalScreenSharing ? "Stop Screen Share" : "Share Workspace Screen"}
           >
-            {isScreenSharing ? <MonitorOff size={18} /> : <Monitor size={18} />}
+            {isLocalScreenSharing ? <MonitorOff size={18} /> : <Monitor size={18} />}
           </motion.button>
 
           <span className="w-[1px] h-6 bg-gray-200 mx-1" />
@@ -1671,6 +1636,29 @@ export const MeetingRoom: React.FC = () => {
               <span>New Workspace chat log posted.</span>
             </motion.div>
           )}
+        </AnimatePresence>
+      </div>
+
+      {/* Dynamic Flying Emoji Reactions Overlay */}
+      <div className="fixed bottom-24 left-6 z-50 pointer-events-none w-48 h-96 overflow-hidden flex flex-col justify-end">
+        <AnimatePresence>
+          {reactions.map((r) => (
+            <motion.div
+              key={r.id}
+              initial={{ y: 200, opacity: 0, x: r.x }}
+              animate={{
+                y: -150,
+                opacity: [0, 1, 1, 0],
+                x: r.x + Math.sin(r.delay * 10) * 30,
+                scale: [0.5, 1.2, 1, 0.8]
+              }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 3.5, ease: 'easeOut', delay: r.delay }}
+              className="absolute text-3xl select-none"
+            >
+              {r.emoji}
+            </motion.div>
+          ))}
         </AnimatePresence>
       </div>
 

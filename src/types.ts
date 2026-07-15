@@ -43,6 +43,7 @@ export interface Participant {
   joinedAt: string;
   isSpeaking?: boolean;
   handRaised?: boolean;
+  peerId?: string;
 }
 
 export interface ChatMessage {
