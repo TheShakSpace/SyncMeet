@@ -44,10 +44,14 @@ import {
   RotateCw,
   Square,
   Circle,
+  Pause,
+  Play,
   Type
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocalMedia } from '../hooks/useLocalMedia';
+import { useMeetingRecorder } from '../hooks/useMeetingRecorder';
+import { MeetingRecorderModal } from '../components/MeetingRecorderModal';
 import { usePeer } from '../hooks/usePeer';
 import { useRemotePeers } from '../hooks/useRemotePeers';
 import { useScreenShare } from '../hooks/useScreenShare';
@@ -104,6 +108,7 @@ export const MeetingRoom: React.FC = () => {
   // Drawers and layout states
   const [activeDrawer, setActiveDrawer] = useState<'none' | 'participants' | 'chat' | 'whiteboard' | 'files' | 'ai-assistant'>('chat');
   const [isAiSummaryModalOpen, setIsAiSummaryModalOpen] = useState(false);
+  const [isRecorderModalOpen, setIsRecorderModalOpen] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -246,6 +251,35 @@ export const MeetingRoom: React.FC = () => {
     onToast: addNotification,
     isFirebaseEnabled: isFirebaseEnabled
   });
+
+  // Professional Meeting Recording Hook
+  const {
+    isRecording,
+    isPaused,
+    formattedDuration,
+    recordingUrl,
+    recordingMeta,
+    startRecording,
+    stopRecording,
+    pauseRecording,
+    resumeRecording,
+    clearRecording
+  } = useMeetingRecorder({
+    localStream,
+    screenStream,
+    remoteStreams,
+    onToast: addNotification,
+    onBroadcastSystemMessage: (text) => {
+      sendChatMessage(text);
+    }
+  });
+
+  // Automatically open the recorder modal when a recording completes
+  useEffect(() => {
+    if (recordingUrl) {
+      setIsRecorderModalOpen(true);
+    }
+  }, [recordingUrl]);
 
   // Collaborative Whiteboard Hook
   const {
@@ -927,8 +961,17 @@ export const MeetingRoom: React.FC = () => {
         </div>
 
         {/* Live analytics & Action bars */}
-        <div className="flex items-center justify-end gap-3 w-full sm:w-auto self-end sm:self-center">
+        <div className="flex items-center justify-end gap-3 w-full sm:w-auto self-end sm:self-center font-mono">
           
+          {/* Glowing Recording Badge */}
+          {isRecording && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-100 px-3 py-2 rounded-2xl text-xs font-bold text-red-600 animate-pulse shrink-0">
+              <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
+              <span>REC {formattedDuration}</span>
+              {isPaused && <span className="text-[10px] text-red-400 font-mono">(PAUSED)</span>}
+            </div>
+          )}
+
           {/* Ticking live duration timer */}
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200/60 px-4 py-2 rounded-2xl text-xs font-mono font-bold text-gray-700">
             <Clock size={13} className="text-blue-500" />
@@ -1814,6 +1857,51 @@ export const MeetingRoom: React.FC = () => {
 
           <span className="w-[1px] h-6 bg-gray-200 mx-1" />
 
+          {/* Professional Meeting Recorder Controls */}
+          {isRecording ? (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-100 px-3 py-1.5 rounded-full shadow-sm">
+              <span className="flex h-2 w-2 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+              </span>
+              <span className="text-[11px] font-mono font-black text-red-600 shrink-0">{formattedDuration}</span>
+              
+              <span className="w-[1px] h-4 bg-red-200/60 mx-1" />
+              
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={isPaused ? resumeRecording : pauseRecording}
+                className="p-1.5 rounded-lg hover:bg-red-100 text-red-700 transition-colors cursor-pointer flex items-center justify-center"
+                title={isPaused ? "Resume recording" : "Pause recording"}
+              >
+                {isPaused ? <Play size={13} fill="currentColor" /> : <Pause size={13} fill="currentColor" />}
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={stopRecording}
+                className="p-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer flex items-center justify-center"
+                title="Stop and save recording"
+              >
+                <Square size={11} fill="currentColor" />
+              </motion.button>
+            </div>
+          ) : (
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setIsRecorderModalOpen(true)}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all border bg-red-50 hover:bg-red-100 text-red-600 border-red-100 cursor-pointer"
+              title="Record Session"
+            >
+              <Circle size={14} fill="currentColor" className="animate-pulse" />
+            </motion.button>
+          )}
+
+          <span className="w-[1px] h-6 bg-gray-200 mx-1" />
+
           {/* Premium AI Summary trigger */}
           <motion.button
             whileHover={{ scale: 1.05, y: -2 }}
@@ -1901,6 +1989,18 @@ export const MeetingRoom: React.FC = () => {
         participants={participants}
         chatMessages={chatItems}
         sharedFiles={sharedFiles}
+        addNotification={addNotification}
+      />
+
+      {/* Professional Meeting Recorder Modal */}
+      <MeetingRecorderModal
+        isOpen={isRecorderModalOpen}
+        onClose={() => setIsRecorderModalOpen(false)}
+        confirmStartRecording={startRecording}
+        recordingUrl={recordingUrl}
+        recordingMeta={recordingMeta}
+        clearRecording={clearRecording}
+        isRecordingActive={isRecording}
         addNotification={addNotification}
       />
 
