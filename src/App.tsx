@@ -1,10 +1,12 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MeetingProvider, useMeeting } from './context/MeetingContext';
+import { LandingPage } from './pages/LandingPage';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { MeetingRoom } from './pages/MeetingRoom';
 import { Settings } from './pages/Settings';
+import { NotFound } from './pages/NotFound';
 import { AppLayout } from './components/layout/AppLayout';
 
 // Protected Route Gate: Redirects to Login if user is unauthenticated
@@ -32,6 +34,9 @@ export default function App() {
     <MeetingProvider>
       <BrowserRouter>
         <Routes>
+          {/* Public Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+
           {/* Public Auth Portal */}
           <Route path="/login" element={<Login />} />
 
@@ -69,9 +74,10 @@ export default function App() {
           />
 
           {/* Root Wildcard Routing Fallback */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </MeetingProvider>
   );
 }
+

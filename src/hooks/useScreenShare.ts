@@ -74,11 +74,10 @@ export function useScreenShare({
       }
     } catch (err: any) {
       console.error("Error starting screen share:", err);
-      if (err.name !== 'NotAllowedError') {
-        if (onToast) {
-          onToast("Could not initiate screen sharing.");
-        }
+      if (onToast) {
+        onToast("Could not initiate screen sharing.");
       }
+      throw err;
     }
   }, [onReplaceVideoTrack, stopScreenShare, onToast]);
 

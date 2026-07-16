@@ -22,6 +22,7 @@ import {
   FileText,
   UploadCloud,
   Eraser,
+  RefreshCw,
   Trash2,
   X,
   Share2,
@@ -53,8 +54,11 @@ import { useScreenShare } from '../hooks/useScreenShare';
 import { useChat } from '../hooks/useChat';
 import { useFiles } from '../hooks/useFiles';
 import { useWhiteboard } from '../hooks/useWhiteboard';
+import { ErrorModal, ErrorModalProps } from '../components/ErrorModal';
 import { MeetingVideo } from '../components/MeetingVideo';
 import { meetingConnectionService } from '../services/meetingConnectionService';
+import { AiAssistantDrawer } from '../components/AiAssistantDrawer';
+import { AiSummaryModal } from '../components/AiSummaryModal';
 
 // Typing indicator helper
 const TypingIndicator: React.FC = () => (
@@ -98,10 +102,24 @@ export const MeetingRoom: React.FC = () => {
   } = useMeeting();
 
   // Drawers and layout states
-  const [activeDrawer, setActiveDrawer] = useState<'none' | 'participants' | 'chat' | 'whiteboard' | 'files'>('chat');
+  const [activeDrawer, setActiveDrawer] = useState<'none' | 'participants' | 'chat' | 'whiteboard' | 'files' | 'ai-assistant'>('chat');
+  const [isAiSummaryModalOpen, setIsAiSummaryModalOpen] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  
+  // Professional Loading Experience & Joining stages
+  const [isJoining, setIsJoining] = useState(true);
+  const [joiningStage, setJoiningStage] = useState(0);
+
+  // Simulated whiteboard sync loader
+  const [isWhiteboardSyncing, setIsWhiteboardSyncing] = useState(false);
+
+  // Elegant system error dialogs state
+  const [errorModal, setErrorModal] = useState<Omit<ErrorModalProps, 'isOpen' | 'onClose'> | null>(null);
+
+  // Online / Offline tracking
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   // Real ticker timer
   const [elapsedSeconds, setElapsedSeconds] = useState(872); // Starts at 14m 32s
@@ -255,6 +273,84 @@ export const MeetingRoom: React.FC = () => {
       destroyPeer();
     };
   }, []);
+
+  // Simulated professional joining sequence
+  useEffect(() => {
+    const stages = [
+      "Syncing secure communication keys...",
+      "Resolving workspace coordinates...",
+      "Allocating audio/video interface streams...",
+      "Checking signal credentials...",
+      "Establishing dual-signaling mesh tunnel...",
+      "Workspace Sync complete!"
+    ];
+    
+    let timer: any;
+    if (isJoining) {
+      const interval = setInterval(() => {
+        setJoiningStage(prev => {
+          if (prev >= stages.length - 1) {
+            clearInterval(interval);
+            timer = setTimeout(() => {
+              setIsJoining(false);
+            }, 600);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 450);
+      return () => {
+        clearInterval(interval);
+        if (timer) clearTimeout(timer);
+      };
+    }
+  }, [isJoining]);
+
+  // Online / Offline tracking listener
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      addNotification("Internet connection restored.");
+      setErrorModal(null);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setErrorModal({
+        title: "Workspace Disconnected",
+        message: "Your internet connection appears to have disconnected. Check your local ports or WiFi router to re-establish workspace sync.",
+        code: "DISCONNECTED"
+      });
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Sync useLocalMedia device failures with beautiful Dialog modals
+  useEffect(() => {
+    if (mediaError) {
+      const isPermissionDenied = mediaError.toLowerCase().includes("permission") || mediaError.toLowerCase().includes("denied");
+      setErrorModal({
+        title: isPermissionDenied ? "Device Access Blocked" : "Media Stream Unavailable",
+        message: mediaError,
+        code: isPermissionDenied ? "PERMISSION_DENIED" : "CAMERA_ERROR"
+      });
+    }
+  }, [mediaError]);
+
+  // Whiteboard sync drawer loading sequence
+  useEffect(() => {
+    if (activeDrawer === 'whiteboard') {
+      setIsWhiteboardSyncing(true);
+      const timer = setTimeout(() => {
+        setIsWhiteboardSyncing(false);
+      }, 750);
+      return () => clearTimeout(timer);
+    }
+  }, [activeDrawer]);
 
   // Sync toolbar states with actual WebRTC media states
   useEffect(() => {
@@ -723,6 +819,73 @@ export const MeetingRoom: React.FC = () => {
     return 'grid-cols-3 max-w-7xl mx-auto h-[68vh]';
   };
 
+  if (isJoining) {
+    return (
+      <div id="meeting-joining-loader" className="fixed inset-0 bg-[#0F172A] flex flex-col items-center justify-center text-white p-6 z-[999] overflow-hidden selection:bg-blue-500/15 selection:text-blue-400">
+        {/* Subtle grid decor */}
+        <div className="absolute inset-0 bg-[radial-gradient(#1E293B_1px,transparent_1px)] [background-size:20px_20px] opacity-40 pointer-events-none" />
+        <div className="absolute w-[400px] h-[400px] rounded-full bg-blue-500/5 blur-[120px] top-1/4 pointer-events-none" />
+        
+        <div className="max-w-md w-full space-y-8 text-center relative z-10 flex flex-col items-center">
+          {/* Pulsing SyncMeet Logo */}
+          <motion.div 
+            animate={{ scale: [0.97, 1.03, 0.97] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            className="w-16 h-16 rounded-3xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/20"
+          >
+            <VideoIcon size={28} className="animate-pulse" />
+          </motion.div>
+
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold font-display tracking-tight text-white">Connecting SyncMeet Room</h2>
+            <p className="text-[11px] text-slate-400 font-mono">ROOM ID: <span className="text-blue-400 font-bold">{roomId || 'sm-huddle-sync'}</span></p>
+          </div>
+
+          {/* Micro-Progress Stages */}
+          <div className="w-full bg-slate-800/80 border border-slate-700/50 rounded-2xl p-5 space-y-4 shadow-xl">
+            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden relative">
+              <motion.div 
+                className="h-full bg-blue-500 rounded-full"
+                initial={{ width: '0%' }}
+                animate={{ width: `${((joiningStage + 1) / 6) * 100}%` }}
+                transition={{ duration: 0.4 }}
+              />
+            </div>
+
+            <div className="space-y-2 text-left font-mono">
+              {[
+                "Syncing secure communication keys...",
+                "Resolving workspace coordinates...",
+                "Allocating audio/video interface streams...",
+                "Checking signal credentials...",
+                "Establishing dual-signaling mesh tunnel...",
+                "Workspace Sync complete!"
+              ].map((stageText, idx) => {
+                const isActive = joiningStage === idx;
+                const isCompleted = joiningStage > idx;
+                return (
+                  <div key={idx} className={`flex items-center gap-2.5 text-[10px] font-bold ${isActive ? 'text-blue-400' : isCompleted ? 'text-slate-500' : 'text-slate-600'}`}>
+                    <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border ${
+                      isCompleted ? 'bg-blue-500/10 border-blue-500 text-blue-500 text-[8px]' : isActive ? 'border-blue-400 animate-pulse text-blue-400 text-[8px]' : 'border-slate-800 text-slate-700 text-[8px]'
+                    }`}>
+                      {isCompleted ? '✓' : idx + 1}
+                    </span>
+                    <span className="truncate">{stageText}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+            <Shield size={12} className="text-emerald-500" />
+            <span>Fidelity signal encryption is active.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div id="syncmeet-meeting-room" className="fixed inset-0 bg-[#F7F8FA] text-gray-900 flex flex-col justify-between p-4 md:p-6 overflow-hidden font-sans">
       
@@ -1064,12 +1227,13 @@ export const MeetingRoom: React.FC = () => {
                 </div>
 
                 {/* Grid of Tabs for switching drawers inside */}
-                <div className="grid grid-cols-4 p-1 bg-gray-100 rounded-xl relative">
+                <div className="grid grid-cols-5 p-1 bg-gray-100 rounded-xl relative">
                   {[
                     { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
                     { id: 'participants' as const, label: 'People', icon: UsersIcon },
                     { id: 'files' as const, label: 'Files', icon: FileText },
-                    { id: 'whiteboard' as const, label: 'Board', icon: Edit3 }
+                    { id: 'whiteboard' as const, label: 'Board', icon: Edit3 },
+                    { id: 'ai-assistant' as const, label: 'AI', icon: Sparkles }
                   ].map((tab) => {
                     const Icon = tab.icon;
                     const isActive = activeDrawer === tab.id;
@@ -1292,6 +1456,25 @@ export const MeetingRoom: React.FC = () => {
                         <h4 className="text-[10px] font-extrabold text-[#6B7280] tracking-wider uppercase font-mono">Shared Artifacts</h4>
                         
                         <div className="space-y-2.5">
+                          {isFileUploading && (
+                            <div className="p-3 bg-blue-50/40 border border-blue-200/60 rounded-2xl flex flex-col gap-2.5 animate-pulse">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-9 h-9 rounded-xl bg-blue-100/50 flex items-center justify-center text-blue-600 shrink-0">
+                                    <RefreshCw size={15} className="animate-spin" style={{ animationDuration: '3s' }} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-slate-700">Uploading File...</p>
+                                    <p className="text-[9px] text-[#2563EB] font-bold mt-0.5">Encrypting and writing blocks...</p>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="w-full h-1 bg-slate-200/60 rounded-full overflow-hidden">
+                                <div className="h-full bg-blue-600 rounded-full w-[65%] animate-pulse" />
+                              </div>
+                            </div>
+                          )}
+
                           {sharedFiles.map(file => (
                             <div key={file.id} className="p-3 bg-white border border-gray-200 rounded-2xl flex flex-col gap-2.5 shadow-sm hover:border-gray-300 transition-colors">
                               <div className="flex items-start justify-between gap-3">
@@ -1419,6 +1602,12 @@ export const MeetingRoom: React.FC = () => {
 
                     {/* Canvas Drawing Sandbox */}
                     <div className="flex-1 bg-white rounded-2xl relative overflow-hidden border border-gray-200 shadow-inner min-h-[300px]">
+                      {isWhiteboardSyncing && (
+                        <div className="absolute inset-0 bg-slate-50/90 backdrop-blur-sm flex flex-col items-center justify-center gap-2.5 z-30">
+                          <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-blue-600 animate-spin" />
+                          <p className="text-[10px] text-slate-500 font-mono tracking-widest font-bold">SYNCHRONIZING CANVAS PLOTS...</p>
+                        </div>
+                      )}
                       <canvas
                         ref={canvasRef}
                         className="absolute inset-0 w-full h-full cursor-crosshair"
@@ -1461,6 +1650,16 @@ export const MeetingRoom: React.FC = () => {
                       />
                     </div>
                   </div>
+                )}
+
+                {/* E. AI ASSISTANT PANEL */}
+                {activeDrawer === 'ai-assistant' && (
+                  <AiAssistantDrawer 
+                    roomId={roomId || 'sm-huddle-sync'}
+                    participants={participants}
+                    chatMessages={chatItems}
+                    sharedFiles={sharedFiles}
+                  />
                 )}
 
               </div>
@@ -1524,6 +1723,13 @@ export const MeetingRoom: React.FC = () => {
               } else {
                 startScreenShare().then(() => {
                   toggleScreenShare();
+                }).catch((err) => {
+                  console.warn("Screen sharing rejected:", err);
+                  setErrorModal({
+                    title: "Screen Share Refused",
+                    message: "The screen capture request was declined, or browser display media privileges are blocked for this portal.",
+                    code: "SCREEN_DENIED"
+                  });
                 });
               }
             }}
@@ -1562,7 +1768,8 @@ export const MeetingRoom: React.FC = () => {
             { id: 'chat' as const, label: 'Chat logs', icon: MessageSquare, badge: unreadCount },
             { id: 'participants' as const, label: 'Participants', icon: UsersIcon, badge: 0 },
             { id: 'files' as const, label: 'Shared items', icon: FileText, badge: 0 },
-            { id: 'whiteboard' as const, label: 'Whiteboard', icon: Edit3, badge: 0 }
+            { id: 'whiteboard' as const, label: 'Whiteboard', icon: Edit3, badge: 0 },
+            { id: 'ai-assistant' as const, label: 'AI Copilot', icon: Sparkles, badge: 0 }
           ].map((item) => {
             const Icon = item.icon;
             const isDrawerOpen = activeDrawer === item.id;
@@ -1603,6 +1810,20 @@ export const MeetingRoom: React.FC = () => {
             title="Configure System Preference"
           >
             <SettingsIcon size={18} />
+          </motion.button>
+
+          <span className="w-[1px] h-6 bg-gray-200 mx-1" />
+
+          {/* Premium AI Summary trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsAiSummaryModalOpen(true)}
+            className="px-4 h-11 rounded-full flex items-center gap-1.5 transition-all border bg-gradient-to-tr from-blue-600 to-indigo-500 hover:from-blue-700 hover:to-indigo-600 text-white border-blue-500 shadow-md shadow-blue-500/10 font-bold text-xs cursor-pointer"
+            title="Generate AI Meeting Briefing & Summary"
+          >
+            <Sparkles size={14} className="animate-pulse" />
+            <span>AI Summary</span>
           </motion.button>
 
           <span className="w-[1px] h-6 bg-gray-200 mx-1" />
@@ -1661,6 +1882,27 @@ export const MeetingRoom: React.FC = () => {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Elegant System Error Dialog */}
+      <ErrorModal
+        isOpen={!!errorModal}
+        title={errorModal?.title || ""}
+        message={errorModal?.message || ""}
+        code={errorModal?.code}
+        onClose={() => setErrorModal(null)}
+        onRetry={errorModal?.code === 'CAMERA_ERROR' || errorModal?.code === 'MIC_ERROR' ? startLocalStream : undefined}
+      />
+
+      {/* AI Workspace Summary Modal */}
+      <AiSummaryModal
+        isOpen={isAiSummaryModalOpen}
+        onClose={() => setIsAiSummaryModalOpen(false)}
+        roomId={roomId || 'sm-huddle-sync'}
+        participants={participants}
+        chatMessages={chatItems}
+        sharedFiles={sharedFiles}
+        addNotification={addNotification}
+      />
 
     </div>
   );
