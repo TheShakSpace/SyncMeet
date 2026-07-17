@@ -249,8 +249,19 @@ async function setupRouting() {
 }
 
 setupRouting().then(() => {
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[SyncMeet FullStack] Server running on http://0.0.0.0:${PORT}`);
+  });
+
+  // Setup PeerServer
+  import("peer").then(({ ExpressPeerServer }) => {
+    const peerServer = ExpressPeerServer(server, {
+      allow_discovery: true
+    });
+    app.use("/peerjs", peerServer);
+    console.log("[SyncMeet FullStack] Local PeerJS Signaling Server active on /peerjs");
+  }).catch(err => {
+    console.error("Failed to start PeerServer:", err);
   });
 }).catch(err => {
   console.error("Vite setup error:", err);

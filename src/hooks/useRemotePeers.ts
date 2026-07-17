@@ -21,13 +21,13 @@ export function useRemotePeers({
   const analysersRef = useRef<Record<string, () => void>>({});
 
   const cleanUpPeerConnection = useCallback((peerId: string) => {
-    console.log("🧹 Cleaning Peer:", peerId);
+    console.log(`[useRemotePeers] 🧹 Cleaning Peer connection for: ${peerId}`);
 
     if (analysersRef.current[peerId]) {
       try {
         analysersRef.current[peerId]();
       } catch (err) {
-        console.error(err);
+        console.error("[useRemotePeers] Error clearing audio analyser:", err);
       }
       delete analysersRef.current[peerId];
     }
@@ -36,7 +36,7 @@ export function useRemotePeers({
       try {
         callsRef.current[peerId].close();
       } catch (err) {
-        console.error(err);
+        console.error("[useRemotePeers] Error closing call connection:", err);
       }
       delete callsRef.current[peerId];
     }
@@ -58,19 +58,34 @@ export function useRemotePeers({
   const setupStreamListener = useCallback((call: MediaConnection) => {
     const peerId = call.peer;
 
-    console.log("====================================");
-    console.log("📞 NEW CONNECTION established with", peerId);
-    console.log("====================================");
+    console.log(`[useRemotePeers] 📞 NEW CONNECTION: Setting up event listeners for remote peer: ${peerId}`);
 
     callsRef.current[peerId] = call;
 
+    // Track RTCPeerConnection events (ICE state, Connection state, Signaling state)
+    const pc = (call as any).peerConnection as RTCPeerConnection;
+    if (pc) {
+      console.log(`[WebRTC Initialization] Peer: ${peerId}, Initial ICE State: ${pc.iceConnectionState}, Initial Connection State: ${pc.connectionState}`);
+      
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[WebRTC ICE State] Peer: ${peerId}, State: ${pc.iceConnectionState}`);
+        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+          console.warn(`[WebRTC ICE Warning] Peer ${peerId} ICE connection is in state: ${pc.iceConnectionState}`);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC Connection State] Peer: ${peerId}, State: ${pc.connectionState}`);
+      };
+
+      pc.onsignalingstatechange = () => {
+        console.log(`[WebRTC Signaling State] Peer: ${peerId}, State: ${pc.signalingState}`);
+      };
+    }
+
     call.on("stream", (remoteStream: MediaStream) => {
-      console.log("====================================");
-      console.log("✅ REMOTE STREAM RECEIVED");
-      console.log("Peer:", peerId);
-      console.log("Stream ID:", remoteStream.id);
-      console.log("Tracks:", remoteStream.getTracks());
-      console.log("====================================");
+      console.log(`[useRemotePeers] ✅ REMOTE STREAM RECEIVED from peer: ${peerId}`);
+      console.log(`[useRemotePeers] Stream ID: ${remoteStream.id}, Video tracks: ${remoteStream.getVideoTracks().length}, Audio tracks: ${remoteStream.getAudioTracks().length}`);
 
       setRemoteStreams(prev => ({
         ...prev,
@@ -93,7 +108,7 @@ export function useRemotePeers({
     });
 
     call.on("close", () => {
-      console.log("❌ Call Closed:", peerId);
+      console.log(`[useRemotePeers] ❌ Call Closed by peer: ${peerId}`);
       cleanUpPeerConnection(peerId);
       if (onToast) {
         onToast("Participant disconnected.");
@@ -101,7 +116,7 @@ export function useRemotePeers({
     });
 
     call.on("error", (err) => {
-      console.error("❌ PeerJS Call Error for", peerId, err);
+      console.error(`[useRemotePeers] ❌ PeerJS Call Error with peer ${peerId}:`, err);
       cleanUpPeerConnection(peerId);
     });
 
@@ -109,11 +124,11 @@ export function useRemotePeers({
 
   const callPeer = useCallback((remotePeerId: string) => {
     if (!peer || peer.destroyed || peer.disconnected) {
-      console.warn("Peer is not connected/ready.");
+      console.warn("[useRemotePeers] Cannot call: Local Peer is not connected/ready.");
       return;
     }
     if (!localStream || localStream.getVideoTracks().length === 0) {
-      console.warn("Local stream video track not active/ready.");
+      console.warn("[useRemotePeers] Cannot call: Local stream video track is not active.");
       return;
     }
     if (!remotePeerId || remotePeerId === peer.id) {
@@ -121,16 +136,16 @@ export function useRemotePeers({
     }
 
     if (callsRef.current[remotePeerId]) {
-      console.log("Already connected/connecting to:", remotePeerId);
+      console.log(`[useRemotePeers] Already connected or connecting to: ${remotePeerId}`);
       return;
     }
 
     try {
-      console.log(`📤 OUTGOING CALL: Calling peer ${remotePeerId}`);
+      console.log(`[useRemotePeers] 📤 OUTGOING CALL: Calling remote Peer ID: ${remotePeerId} from my Peer ID: ${peer.id}`);
       const call = peer.call(remotePeerId, localStream);
       setupStreamListener(call);
     } catch (err) {
-      console.error("peer.call failed for", remotePeerId, err);
+      console.error(`[useRemotePeers] peer.call failed for target ${remotePeerId}:`, err);
     }
 
   }, [peer, localStream, setupStreamListener]);
@@ -140,22 +155,22 @@ export function useRemotePeers({
     if (!peer || peer.destroyed) return;
 
     if (callsRef.current[remotePeerId]) {
-      console.log("Duplicate incoming call from:", remotePeerId, "ignoring.");
+      console.log(`[useRemotePeers] Duplicate incoming call from: ${remotePeerId}. Rejecting duplicate.`);
       return;
     }
 
     try {
-      console.log(`📥 INCOMING CALL answered from ${remotePeerId}`);
+      console.log(`[useRemotePeers] 📥 INCOMING CALL: Answering incoming call from peer: ${remotePeerId}`);
       call.answer(localStream || undefined);
       setupStreamListener(call);
     } catch (err) {
-      console.error("Answer incoming call failed:", err);
+      console.error(`[useRemotePeers] Answering incoming call failed from ${remotePeerId}:`, err);
     }
 
   }, [peer, localStream, setupStreamListener]);
 
   const cleanUpAllConnections = useCallback(() => {
-    console.log("🧹 Cleaning all peer connections");
+    console.log("[useRemotePeers] 🧹 Cleaning all remote peer connections");
     Object.keys(callsRef.current).forEach(cleanUpPeerConnection);
     callsRef.current = {};
     analysersRef.current = {};
@@ -164,7 +179,7 @@ export function useRemotePeers({
   }, [cleanUpPeerConnection]);
 
   const replaceLocalVideoTrack = useCallback(async (newTrack: MediaStreamTrack) => {
-    console.log("🔄 Replacing video track for all remote peers with", newTrack.label);
+    console.log(`[useRemotePeers] 🔄 Replacing video track for all remote peers with: ${newTrack.label}`);
     for (const call of Object.values(callsRef.current)) {
       const pc = (call as any).peerConnection;
       if (!pc) continue;
@@ -175,9 +190,9 @@ export function useRemotePeers({
       if (sender) {
         try {
           await sender.replaceTrack(newTrack);
-          console.log("🎥 Video track replaced successfully in connection");
+          console.log("[useRemotePeers] 🎥 Video track replaced successfully in peer sender");
         } catch (err) {
-          console.error("Failed to replace video track in connection:", err);
+          console.error("[useRemotePeers] Failed to replace video track in connection:", err);
         }
       }
     }
