@@ -14,6 +14,10 @@ let globalPeer: Peer | null = null;
 let globalPeerId: string | null = null;
 let activeIncomingCallHandler: ((call: MediaConnection) => void) | null = null;
 
+// In-flight guard to prevent creating a second Peer (and triggering "ID is taken")
+let creatingPeer: boolean = false;
+let tearingDownPeer: boolean = false;
+
 export function usePeer({
   userId,
   localStream,
@@ -59,21 +63,35 @@ export function usePeer({
   const initializePeer = useCallback(() => {
     if (!userId) return;
 
+
+
+    // Always reuse an existing, not-yet-destroyed peer.
     if (globalPeer && !globalPeer.destroyed) {
       console.log("Reusing existing PeerJS instance.");
       setPeer(globalPeer);
       setPeerId(globalPeerId);
       setIsPeerLoading(false);
-      
-      // If disconnected, try to reconnect
+
+      // If disconnected, try to reconnect (do NOT recreate).
       if (globalPeer.disconnected) {
-        globalPeer.reconnect();
+        try {
+          globalPeer.reconnect();
+        } catch (e) {
+          console.warn('[usePeer] reconnect() failed:', e);
+        }
       }
+      return;
+    }
+
+    // Prevent race: if we are in the middle of creating/destroying, don't create another.
+    if (creatingPeer || tearingDownPeer) {
+      console.warn('[usePeer] initializePeer() skipped due to in-flight create/destroy.');
       return;
     }
 
     setIsPeerLoading(true);
     setPeerError(null);
+    creatingPeer = true;
 
     const newPeer = peerService.createPeer(userId);
     globalPeer = newPeer;
@@ -83,6 +101,8 @@ export function usePeer({
       setPeerId(id);
       setPeer(newPeer);
       setIsPeerLoading(false);
+      creatingPeer = false;
+      tearingDownPeer = false;
       console.log(`PeerJS Connection established. Peer ID: ${id}`);
     });
 
@@ -96,46 +116,68 @@ export function usePeer({
     newPeer.on('error', (err: any) => {
       console.error("PeerJS error received:", err);
       let errMsg = "An error occurred with the peer connection.";
-      
-      if (err.type === 'peer-unavailable') {
+
+      if (err?.type === 'peer-unavailable') {
         errMsg = "Requested participant is currently unreachable.";
-      } else if (err.type === 'id-taken') {
+      } else if (err?.type === 'id-taken') {
         errMsg = "Peer connection is already active on another tab or window.";
-      } else if (err.type === 'network') {
+      } else if (err?.type === 'network') {
         errMsg = "Peer network disconnected or firewall blocking connection.";
       }
 
-      setPeerError(err.type);
+      setPeerError(err?.type);
       if (onToastRef.current) {
         onToastRef.current(`WebRTC Warning: ${errMsg}`);
       }
       setIsPeerLoading(false);
+      creatingPeer = false;
+
+      // Do NOT destroy+recreate on id-taken; allow caller to keep using/handle.
     });
 
     // Handle reconnects gracefully
     newPeer.on('disconnected', () => {
       console.warn("PeerJS disconnected. Attempting reconnect...");
       if (newPeer && !newPeer.destroyed) {
-        newPeer.reconnect();
+        try {
+          newPeer.reconnect();
+        } catch (e) {
+          console.warn('[usePeer] reconnect() failed:', e);
+        }
       }
     });
   }, [userId]);
 
   const destroyPeer = useCallback(() => {
-    if (globalPeer) {
-      const p = globalPeer;
+    if (!globalPeer) return;
+
+    // Prevent destroy/create race.
+    if (tearingDownPeer) return;
+    tearingDownPeer = true;
+
+    const p = globalPeer;
+    try {
+      // Do not null out globalPeer until destroy completes.
+      if (!p.destroyed) {
+        try {
+          p.disconnect();
+        } catch (e) {
+          console.warn('[usePeer] disconnect() failed:', e);
+        }
+        p.destroy();
+      }
+
+      console.log("PeerJS instance cleanly destroyed.");
+    } catch (err) {
+      console.error("Error destroying peer instance:", err);
+    } finally {
       globalPeer = null;
       globalPeerId = null;
       setPeer(null);
       setPeerId(null);
-      
-      try {
-        p.disconnect();
-        p.destroy();
-        console.log("PeerJS instance cleanly destroyed.");
-      } catch (err) {
-        console.error("Error destroying peer instance:", err);
-      }
+      setIsPeerLoading(false);
+      tearingDownPeer = false;
+      creatingPeer = false;
     }
   }, []);
 

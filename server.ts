@@ -3,11 +3,14 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { ExpressPeerServer } from "peer";
+import http from "http";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
 
 // Parse JSON request bodies
 app.use(express.json());
@@ -106,7 +109,7 @@ Tone Guidelines: Keep your responses highly professional, helpful, concise, and 
       },
     });
 
-    res.json({ text: response.text });
+    res.json({ text: response.text ?? "" });
   } catch (error: any) {
     console.error("AI Chat API Error:", error);
     res.status(500).json({ error: error.message || "An internal error occurred while processing your AI request." });
@@ -249,20 +252,30 @@ async function setupRouting() {
 }
 
 setupRouting().then(() => {
-  const server = app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = http.createServer(app);
+
+  const server = httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`[SyncMeet FullStack] Server running on http://0.0.0.0:${PORT}`);
   });
 
-  // Setup PeerServer
-  import("peer").then(({ ExpressPeerServer }) => {
-    const peerServer = ExpressPeerServer(server, {
-      allow_discovery: true
-    });
-    app.use("/peerjs", peerServer);
-    console.log("[SyncMeet FullStack] Local PeerJS Signaling Server active on /peerjs");
-  }).catch(err => {
-    console.error("Failed to start PeerServer:", err);
+  // Setup PeerServer on the same explicit HTTP server instance.
+  // This avoids upgrade/middleware mismatch causing ws://.../peerjs connection failures.
+  const peerServer = ExpressPeerServer(server, {
+    path: "/peerjs",
+    allow_discovery: true
   });
+
+  // PeerJS needs to be mounted before other potential SPA catch-all handlers.
+  app.use(peerServer);
+
+  peerServer.on('connection', (client: any) => {
+    console.log('[SyncMeet FullStack] PeerJS client connected');
+  });
+  peerServer.on('error', (err: any) => {
+    console.error('[SyncMeet FullStack] PeerJS server error:', err);
+  });
+
+  console.log("[SyncMeet FullStack] Local PeerJS Signaling Server active on /peerjs");
 }).catch(err => {
   console.error("Vite setup error:", err);
 });

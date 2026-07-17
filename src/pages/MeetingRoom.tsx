@@ -315,9 +315,9 @@ export const MeetingRoom: React.FC = () => {
   useEffect(() => {
     startLocalStream();
     return () => {
+      // Media cleanup is safe on unmount; ONLY destroy Peer when leaving/leaving the meeting.
       stopLocalStream();
       cleanUpAllConnections();
-      destroyPeer();
     };
   }, []);
 
@@ -568,6 +568,10 @@ export const MeetingRoom: React.FC = () => {
 
   const handleLeave = async () => {
     await leaveMeeting();
+
+    // Destroy Peer ONLY when the user explicitly leaves the meeting.
+    destroyPeer();
+
     addNotification("Disconnected from the huddle.");
     navigate('/dashboard');
   };
