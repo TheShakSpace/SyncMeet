@@ -29,7 +29,8 @@ export const LandingPage: React.FC = () => {
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+      // motion@ uses Easing types; keep it simple for TS compatibility
+      transition: { duration: 0.6 },
     },
   };
 
@@ -167,7 +168,7 @@ export const LandingPage: React.FC = () => {
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 40 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.4 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
               className="relative aspect-[4/3] bg-white rounded-3xl border border-slate-200/80 shadow-2xl p-4 overflow-hidden"
             >
               {/* Fake Window bar */}

@@ -1,9 +1,9 @@
 {
-  "apiKey": "placeholder-api-key",
-  "authDomain": "syncmeet-app.firebaseapp.com",
-  "projectId": "syncmeet-app",
-  "storageBucket": "syncmeet-app.appspot.com",
-  "messagingSenderId": "1234567890",
-  "appId": "1:1234567890:web:abcdef123456",
+  "apiKey": "AIzaSyDDnkswZG2NSW9gEtGHsuGdNRzpd1kKrRU",
+  "authDomain": "syncmeet-3ff26.firebaseapp.com",
+  "projectId": "syncmeet-3ff26",
+  "storageBucket": "syncmeet-3ff26.firebasestorage.app",
+  "messagingSenderId": "814106336934",
+  "appId": "1:814106336934:web:37dddb4a4055095f0d1e67",
   "firestoreDatabaseId": "(default)"
 }

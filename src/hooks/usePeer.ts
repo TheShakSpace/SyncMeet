@@ -83,11 +83,11 @@ export function usePeer({
       setIsPeerLoading(false);
     });
 
+    // IMPORTANT: Do not auto-reconnect with reconnect() while the component/hook lifecycle
+    // is still managing peer creation/destruction. PeerJS cloud reconnect can trigger
+    // repeated 'id-taken' / disconnect loops.
     newPeer.on('disconnected', () => {
-      console.warn("PeerJS disconnected. Attempting reconnection...");
-      if (newPeer && !newPeer.destroyed) {
-        newPeer.reconnect();
-      }
+      console.warn("PeerJS disconnected.");
     });
   }, [userId, onIncomingCall, onToast]);
 

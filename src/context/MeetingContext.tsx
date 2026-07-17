@@ -69,7 +69,9 @@ interface MeetingContextType {
   // System alerts / notifications
   notifications: string[];
   addNotification: (message: string) => void;
+  clearNotifications: () => void;
 }
+
 
 const MeetingContext = createContext<MeetingContextType | undefined>(undefined);
 
@@ -102,13 +104,21 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const simulationIntervalsRef = useRef<number[]>([]);
   const unsubscribeListRef = useRef<(() => void)[]>([]);
 
+  const clearNotifications = () => {
+    setNotifications([]);
+  };
+
   // Local helper: Add ephemeral system notification
   const addNotification = (message: string) => {
-    setNotifications(prev => [...prev.slice(-4), message]);
+    setNotifications(prev => {
+      const next = [...prev.slice(-4), message];
+      return next;
+    });
     setTimeout(() => {
       setNotifications(prev => prev.filter(m => m !== message));
     }, 4000);
   };
+
 
   // Safe wrapper for localStorage
   const getLocalStorageData = <T,>(key: string, defaultValue: T): T => {
@@ -869,7 +879,8 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updateProfile,
       updatePreferences,
       notifications,
-      addNotification
+      addNotification,
+      clearNotifications
     }}>
       {children}
     </MeetingContext.Provider>
