@@ -35,6 +35,7 @@ export function useMeetingRecorder({
   const streamToRecordRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const timerIntervalRef = useRef<any>(null);
+  const durationRef = useRef<number>(0);
   const chunksRef = useRef<Blob[]>([]);
 
   // Helper: Format bytes to human readable form
@@ -81,6 +82,7 @@ export function useMeetingRecorder({
     try {
       setRecorderError(null);
       chunksRef.current = [];
+      durationRef.current = 0;
       setRecordingDuration(0);
 
       // Check browser compatibility
@@ -175,7 +177,7 @@ export function useMeetingRecorder({
         setRecordingUrl(url);
         
         setRecordingMeta({
-          duration: formatDuration(recordingDuration),
+          duration: formatDuration(durationRef.current),
           size: formatBytes(finalBlob.size),
           timestamp: new Date().toLocaleString()
         });
@@ -210,7 +212,8 @@ export function useMeetingRecorder({
       setIsPaused(false);
 
       timerIntervalRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
+        durationRef.current += 1;
+        setRecordingDuration(durationRef.current);
       }, 1000);
 
       onToast("Meeting recording started successfully.");
@@ -224,7 +227,7 @@ export function useMeetingRecorder({
       setRecorderError(msg);
       onToast(`Recording error: ${msg}`);
     }
-  }, [localStream, screenStream, remoteStreams, onToast, onBroadcastSystemMessage, recordingDuration]);
+  }, [localStream, screenStream, remoteStreams, onToast, onBroadcastSystemMessage]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -271,7 +274,8 @@ export function useMeetingRecorder({
       setIsPaused(false);
 
       timerIntervalRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
+        durationRef.current += 1;
+        setRecordingDuration(durationRef.current);
       }, 1000);
 
       onToast("Recording resumed.");
