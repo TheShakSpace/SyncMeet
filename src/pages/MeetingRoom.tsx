@@ -86,6 +86,7 @@ interface MockParticipant {
   isHost: boolean;
   handRaised: boolean;
   connectionQuality: 'excellent' | 'good' | 'poor';
+  peerId?: string;
 }
 
 export const MeetingRoom: React.FC = () => {
