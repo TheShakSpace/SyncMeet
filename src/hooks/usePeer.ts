@@ -9,58 +9,87 @@ interface UsePeerProps {
   onToast?: (message: string) => void;
 }
 
+// Module-level singletons to guarantee exactly one Peer instance
+let globalPeer: Peer | null = null;
+let globalPeerId: string | null = null;
+let activeIncomingCallHandler: ((call: MediaConnection) => void) | null = null;
+
 export function usePeer({
   userId,
   localStream,
   onIncomingCall,
   onToast
 }: UsePeerProps) {
-  const [peer, setPeer] = useState<Peer | null>(null);
-  const [peerId, setPeerId] = useState<string | null>(null);
+  const [peer, setPeer] = useState<Peer | null>(globalPeer);
+  const [peerId, setPeerId] = useState<string | null>(globalPeerId);
   const [isPeerLoading, setIsPeerLoading] = useState(false);
   const [peerError, setPeerError] = useState<string | null>(null);
 
-  const peerRef = useRef<Peer | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   localStreamRef.current = localStream; // keep ref updated to avoid closure traps
 
+  const onIncomingCallRef = useRef(onIncomingCall);
+  const onToastRef = useRef(onToast);
+
+  useEffect(() => {
+    onIncomingCallRef.current = onIncomingCall;
+    onToastRef.current = onToast;
+  });
+
+  // Set up activeIncomingCallHandler to route calls to the current callback
+  useEffect(() => {
+    activeIncomingCallHandler = (call) => {
+      if (onIncomingCallRef.current) {
+        onIncomingCallRef.current(call);
+      } else {
+        if (localStreamRef.current) {
+          call.answer(localStreamRef.current);
+          console.log(`Answered call from ${call.peer} with local stream.`);
+        } else {
+          call.answer();
+          console.log(`Answered call from ${call.peer} with empty stream.`);
+        }
+      }
+    };
+    return () => {
+      activeIncomingCallHandler = null;
+    };
+  }, []);
+
   const initializePeer = useCallback(() => {
     if (!userId) return;
-    if (peerRef.current) return;
+
+    if (globalPeer && !globalPeer.destroyed) {
+      console.log("Reusing existing PeerJS instance.");
+      setPeer(globalPeer);
+      setPeerId(globalPeerId);
+      setIsPeerLoading(false);
+      
+      // If disconnected, try to reconnect
+      if (globalPeer.disconnected) {
+        globalPeer.reconnect();
+      }
+      return;
+    }
 
     setIsPeerLoading(true);
     setPeerError(null);
 
-    // We can use the userId directly as the PeerJS ID. If PeerJS returns error that 
-    // ID is taken (e.g. from hot-reloads or dual browser windows), we fallback to 
-    // letting PeerJS generate a random one.
     const newPeer = peerService.createPeer(userId);
-    peerRef.current = newPeer;
+    globalPeer = newPeer;
 
     newPeer.on('open', (id) => {
+      globalPeerId = id;
       setPeerId(id);
       setPeer(newPeer);
       setIsPeerLoading(false);
       console.log(`PeerJS Connection established. Peer ID: ${id}`);
     });
 
-    // Handle incoming video calls from remote peers
     newPeer.on('call', (call) => {
       console.log(`Incoming call received from remote peer: ${call.peer}`);
-      
-      // If we have an incoming call handler passed from the parent, trigger it
-      if (onIncomingCall) {
-        onIncomingCall(call);
-      } else {
-        // Default behavior: Answer the call with our local stream if active
-        if (localStreamRef.current) {
-          call.answer(localStreamRef.current);
-          console.log(`Answered call from ${call.peer} with local stream.`);
-        } else {
-          // If local stream is not active yet, answer anyway to establish the connection
-          call.answer();
-          console.log(`Answered call from ${call.peer} with empty stream.`);
-        }
+      if (activeIncomingCallHandler) {
+        activeIncomingCallHandler(call);
       }
     });
 
@@ -77,24 +106,26 @@ export function usePeer({
       }
 
       setPeerError(err.type);
-      if (onToast) {
-        onToast(`WebRTC Warning: ${errMsg}`);
+      if (onToastRef.current) {
+        onToastRef.current(`WebRTC Warning: ${errMsg}`);
       }
       setIsPeerLoading(false);
     });
 
-    // IMPORTANT: Do not auto-reconnect with reconnect() while the component/hook lifecycle
-    // is still managing peer creation/destruction. PeerJS cloud reconnect can trigger
-    // repeated 'id-taken' / disconnect loops.
+    // Handle reconnects gracefully
     newPeer.on('disconnected', () => {
-      console.warn("PeerJS disconnected.");
+      console.warn("PeerJS disconnected. Attempting reconnect...");
+      if (newPeer && !newPeer.destroyed) {
+        newPeer.reconnect();
+      }
     });
-  }, [userId, onIncomingCall, onToast]);
+  }, [userId]);
 
   const destroyPeer = useCallback(() => {
-    if (peerRef.current) {
-      const p = peerRef.current;
-      peerRef.current = null;
+    if (globalPeer) {
+      const p = globalPeer;
+      globalPeer = null;
+      globalPeerId = null;
       setPeer(null);
       setPeerId(null);
       
@@ -113,10 +144,7 @@ export function usePeer({
     if (userId) {
       initializePeer();
     }
-    return () => {
-      destroyPeer();
-    };
-  }, [userId, initializePeer, destroyPeer]);
+  }, [userId, initializePeer]);
 
   return {
     peer,

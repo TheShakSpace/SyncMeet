@@ -453,40 +453,6 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     simulationIntervalsRef.current.forEach(interval => clearInterval(interval));
     simulationIntervalsRef.current = [];
 
-    // Simulate standard premium participants joining
-    const systemParticipants: Participant[] = [
-      {
-        uid: 'sys-sarah',
-        displayName: 'Sarah Connor',
-        photoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-        audioEnabled: true,
-        videoEnabled: true,
-        screenShareEnabled: false,
-        isHost: false,
-        joinedAt: new Date().toISOString()
-      },
-      {
-        uid: 'sys-alex',
-        displayName: 'Alex Rivera',
-        photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-        audioEnabled: false,
-        videoEnabled: true,
-        screenShareEnabled: false,
-        isHost: false,
-        joinedAt: new Date().toISOString()
-      },
-      {
-        uid: 'sys-elena',
-        displayName: 'Elena Rostova',
-        photoURL: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80',
-        audioEnabled: true,
-        videoEnabled: false,
-        screenShareEnabled: false,
-        isHost: false,
-        joinedAt: new Date().toISOString()
-      }
-    ];
-
     // Set initial chat messages
     const initialChat: ChatMessage[] = [
       {
@@ -521,7 +487,6 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         if (msgs.length > 0) {
           setChatMessages(prev => {
-            // Keep system message if needed, or replace with db messages
             const welcomeMsg = prev.filter(m => m.isSystem);
             return [...welcomeMsg, ...msgs.filter(m => !prev.some(p => p.id === m.id))];
           });
@@ -539,7 +504,8 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           videoEnabled: preferences.cameraOnDefault,
           screenShareEnabled: false,
           isHost: targetMeeting.hostId === currentUser.uid,
-          joinedAt: serverTimestamp()
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       } catch (err) {
         console.error("Failed to add participant to firestore: ", err);
@@ -549,113 +515,40 @@ export const MeetingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const participantsRef = collection(db, 'meetings', cleanId, 'participants');
       const unsubParticipants = onSnapshot(participantsRef, (snapshot) => {
         const parts: Participant[] = [];
+        const now = Date.now();
         snapshot.forEach((doc) => {
           const data = doc.data();
+          if (data.leftAt) return;
+
+          // Filter out stale participants (no update in last 30 seconds)
+          if (data.updatedAt) {
+            const lastUpdate = data.updatedAt.seconds ? data.updatedAt.seconds * 1000 : new Date(data.updatedAt).getTime();
+            if (now - lastUpdate > 30000) {
+              return; // Stale participant
+            }
+          }
+
           parts.push({
             uid: doc.id,
-            displayName: data.displayName,
-            photoURL: data.photoURL,
-            audioEnabled: data.audioEnabled,
-            videoEnabled: data.videoEnabled,
-            screenShareEnabled: data.screenShareEnabled,
-            isHost: data.isHost,
-            joinedAt: new Date(data.joinedAt?.seconds * 1000 || Date.now()).toISOString(),
+            displayName: data.displayName || 'Anonymous',
+            photoURL: data.photoURL || '',
+            audioEnabled: data.audioEnabled ?? true,
+            videoEnabled: data.videoEnabled ?? true,
+            screenShareEnabled: data.screenShareEnabled ?? false,
+            isHost: data.isHost ?? false,
+            joinedAt: data.joinedAt ? (data.joinedAt.seconds ? new Date(data.joinedAt.seconds * 1000).toISOString() : new Date(data.joinedAt).toISOString()) : new Date().toISOString(),
             peerId: data.peerId,
-            handRaised: data.handRaised,
-            isSpeaking: data.isSpeaking
+            handRaised: data.handRaised ?? false,
+            isSpeaking: data.isSpeaking ?? false
           });
         });
-        // Combine with default system participants to make the room always feel rich and crowded!
-        setActiveParticipants([...parts, ...systemParticipants.filter(sp => !parts.some(p => p.uid === sp.uid))]);
+        setActiveParticipants(parts);
       });
       unsubscribeListRef.current.push(unsubParticipants);
 
     } else {
-      // Simulation mode
+      // Simulation mode (Local Sandbox)
       setActiveParticipants(initialParticipants);
-
-      // Stagger system users joining
-      systemParticipants.forEach((sysUser, idx) => {
-        const delay = (idx + 1) * 3000;
-        const joinTimeout = window.setTimeout(() => {
-          setActiveParticipants(prev => {
-            if (prev.some(p => p.uid === sysUser.uid)) return prev;
-            addNotification(`${sysUser.displayName} joined the meeting`);
-            return [...prev, sysUser];
-          });
-
-          // System user greeting message
-          setChatMessages(prev => [
-            ...prev,
-            {
-              id: `msg-${sysUser.uid}-join`,
-              senderId: sysUser.uid,
-              senderName: sysUser.displayName,
-              senderPhotoURL: sysUser.photoURL,
-              text: idx === 0 ? "Hey everyone! Glad to join." : idx === 1 ? "Incredible layout, the dark theme is amazing!" : "Hey, I can hear you perfectly.",
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          ]);
-        }, delay);
-        simulationIntervalsRef.current.push(joinTimeout);
-      });
-
-      // Periodically trigger mock participants speaking & toggling states
-      const talkInterval = window.setInterval(() => {
-        setActiveParticipants(prev => {
-          if (prev.length <= 1) return prev;
-          // Select a random participant (other than current user)
-          const otherParticipants = prev.filter(p => p.uid !== currentUser.uid);
-          if (otherParticipants.length === 0) return prev;
-          
-          const randomIndex = Math.floor(Math.random() * otherParticipants.length);
-          const chosen = otherParticipants[randomIndex];
-
-          return prev.map(p => {
-            if (p.uid === chosen.uid && p.audioEnabled) {
-              return { ...p, isSpeaking: !p.isSpeaking };
-            }
-            return { ...p, isSpeaking: false };
-          });
-        });
-      }, 2500);
-      simulationIntervalsRef.current.push(talkInterval);
-
-      // Automated Chat simulation
-      const chatInterval = window.setInterval(() => {
-        const responses = [
-          "The glassmorphism cards look incredibly clean.",
-          "Let me share some mock design assets on the chat soon.",
-          "Are we using Framer Motion for transitions? The page loads are so smooth.",
-          "Yes, this really does feel like Linear combined with Google Meet!",
-          "Can you hear me fine?",
-          "SyncMeet is beautiful. Is the code compiled with Vite?",
-          "Indeed, Vite 6 speeds up the build process significantly."
-        ];
-        
-        setActiveParticipants(prev => {
-          const otherParticipants = prev.filter(p => p.uid !== currentUser.uid);
-          if (otherParticipants.length === 0) return prev;
-          
-          const speaker = otherParticipants[Math.floor(Math.random() * otherParticipants.length)];
-          const msgText = responses[Math.floor(Math.random() * responses.length)];
-          
-          setChatMessages(chatPrev => [
-            ...chatPrev,
-            {
-              id: `msg-sim-${Date.now()}`,
-              senderId: speaker.uid,
-              senderName: speaker.displayName,
-              senderPhotoURL: speaker.photoURL,
-              text: msgText,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          ]);
-
-          return prev;
-        });
-      }, 12000);
-      simulationIntervalsRef.current.push(chatInterval);
     }
   };
 

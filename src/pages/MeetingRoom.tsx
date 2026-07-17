@@ -61,6 +61,8 @@ import { useWhiteboard } from '../hooks/useWhiteboard';
 import { ErrorModal, ErrorModalProps } from '../components/ErrorModal';
 import { MeetingVideo } from '../components/MeetingVideo';
 import { meetingConnectionService } from '../services/meetingConnectionService';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { AiAssistantDrawer } from '../components/AiAssistantDrawer';
 import { AiSummaryModal } from '../components/AiSummaryModal';
 
@@ -210,7 +212,13 @@ export const MeetingRoom: React.FC = () => {
     localStream,
     onReplaceVideoTrack: replaceLocalVideoTrack,
     onRestoreWebcam: async () => {
-      await startLocalStream();
+      const stream = await startLocalStream();
+      if (stream) {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          replaceLocalVideoTrack(videoTrack);
+        }
+      }
     },
     onToast: addNotification,
     isFirebaseEnabled: isFirebaseEnabled
@@ -298,6 +306,10 @@ export const MeetingRoom: React.FC = () => {
     isFirebaseEnabled: isFirebaseEnabled
   });
 
+  // Computed screen sharing status
+  const remoteScreenSharer = activeParticipants.find(p => p.uid !== currentUser?.uid && p.screenShareEnabled);
+  const isScreenSharingActive = isLocalScreenSharing || !!remoteScreenSharer;
+
   // Automatically start local stream on load
   useEffect(() => {
     startLocalStream();
@@ -307,6 +319,22 @@ export const MeetingRoom: React.FC = () => {
       destroyPeer();
     };
   }, []);
+
+  // Heartbeat presence update in Firestore
+  useEffect(() => {
+    if (!currentUser?.uid || !roomId || !isFirebaseEnabled) return;
+    const interval = setInterval(async () => {
+      try {
+        const pDoc = doc(db, 'meetings', roomId, 'participants', currentUser.uid);
+        await updateDoc(pDoc, {
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Failed to send presence heartbeat:", err);
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser?.uid, roomId, isFirebaseEnabled]);
 
   // Simulated professional joining sequence
   useEffect(() => {
@@ -423,11 +451,7 @@ export const MeetingRoom: React.FC = () => {
   const [participants, setParticipants] = useState<MockParticipant[]>([]);
 
   // Local Chat state
-  const [chatItems, setChatItems] = useState([
-    { id: 'm1', senderId: 'aria', senderName: 'Aria Rose', senderPhotoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80', text: 'Hey team, I uploaded the latest visual designs for Sprint 2! They are ready to view in the Files tab.', timestamp: '10:14 AM' },
-    { id: 'm2', senderId: 'marcus', senderName: 'Marcus Vance', senderPhotoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', text: 'Excellent. Let me cross-verify the layout with the schema rules on the server side.', timestamp: '10:15 AM' },
-    { id: 'm3', senderId: 'liam', senderName: 'Liam Sterling', senderPhotoURL: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', text: 'Can we also test the drawing whiteboard with the new styling brush today?', timestamp: '10:16 AM' }
-  ]);
+  const [chatItems, setChatItems] = useState<any[]>([]);
 
   // Synchronize internal participant audio/video with toolbar state
   useEffect(() => {
@@ -442,9 +466,8 @@ export const MeetingRoom: React.FC = () => {
   // Synchronize local participants list with live backend activeParticipants
   useEffect(() => {
     if (activeParticipants && activeParticipants.length > 0) {
-      setParticipants(prev => {
-        // Map active participants
-        const mappedReal = activeParticipants.map(p => {
+      setParticipants(() => {
+        return activeParticipants.map(p => {
           const isSelf = p.uid === currentUser?.uid;
           const role = isSelf 
             ? 'Project Lead (You)' 
@@ -458,123 +481,37 @@ export const MeetingRoom: React.FC = () => {
             avatar: p.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${p.uid}`,
             audioEnabled: p.audioEnabled,
             videoEnabled: p.videoEnabled,
-            isSpeaking: isSelf ? isLocalSpeaking : (speakingPeers[p.uid] || p.isSpeaking || false),
+            isSpeaking: isSelf ? isLocalSpeaking : (speakingPeers[p.peerId || p.uid] || p.isSpeaking || false),
             isHost: p.isHost,
             handRaised: p.handRaised || false,
             peerId: p.peerId,
             connectionQuality: (isSelf ? 'excellent' : 'good') as 'excellent' | 'good' | 'poor'
           };
         });
-
-        // To keep the room beautifully populated for demo, let's keep the system/mock participants 
-        // that do not overlap with our real participants.
-        const defaultMocks = [
-          {
-            uid: 'aria',
-            displayName: 'Aria Rose',
-            role: 'Lead Product Designer',
-            avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80',
-            audioEnabled: true,
-            videoEnabled: true,
-            isSpeaking: false,
-            isHost: false,
-            handRaised: false,
-            connectionQuality: 'excellent' as const
-          },
-          {
-            uid: 'marcus',
-            displayName: 'Marcus Vance',
-            role: 'Staff Systems Architect',
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
-            audioEnabled: false,
-            videoEnabled: true,
-            isSpeaking: false,
-            isHost: false,
-            handRaised: false,
-            connectionQuality: 'excellent' as const
-          },
-          {
-            uid: 'liam',
-            displayName: 'Liam Sterling',
-            role: 'Frontend Engineer',
-            avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
-            audioEnabled: true,
-            videoEnabled: false,
-            isSpeaking: false,
-            isHost: false,
-            handRaised: false,
-            connectionQuality: 'good' as const
-          },
-          {
-            uid: 'sarah',
-            displayName: 'Sarah Jenkins',
-            role: 'Security Compliance',
-            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80',
-            audioEnabled: false,
-            videoEnabled: false,
-            isSpeaking: false,
-            isHost: false,
-            handRaised: false,
-            connectionQuality: 'good' as const
-          },
-          {
-            uid: 'james',
-            displayName: 'James Chen',
-            role: 'Senior Backend Architect',
-            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80',
-            audioEnabled: true,
-            videoEnabled: true,
-            isSpeaking: false,
-            isHost: false,
-            handRaised: false,
-            connectionQuality: 'excellent' as const
-          }
-        ];
-
-        // Filter mocks to only include those that don't match any real participant's uid/displayName
-        const activeMocks = defaultMocks.filter(m => 
-          !mappedReal.some(r => r.displayName.toLowerCase() === m.displayName.toLowerCase() || r.uid === m.uid)
-        );
-
-        // Combine
-        return [...mappedReal, ...activeMocks];
       });
+    } else {
+      setParticipants([]);
     }
   }, [activeParticipants, currentUser, isLocalSpeaking, speakingPeers]);
 
   // Synchronize local chat with live backend chat messages
   useEffect(() => {
-    if (chatMessages && chatMessages.length > 0) {
-      setChatItems(prev => {
-        const mappedReal = chatMessages.map(msg => {
-          const isMe = msg.senderId === currentUser?.uid;
-          return {
-            id: msg.id,
-            senderId: isMe ? 'self' : msg.senderId,
-            senderName: msg.senderName,
-            senderPhotoURL: msg.senderPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.senderName}`,
-            text: msg.text,
-            timestamp: msg.timestamp
-          };
-        });
-
-        // Combine default onboarding messages with mapped ones, preventing duplicate ids
-        const defaults = [
-          { id: 'm1', senderId: 'aria', senderName: 'Aria Rose', senderPhotoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80', text: 'Hey team, I uploaded the latest visual designs for Sprint 2! They are ready to view in the Files tab.', timestamp: '10:14 AM' },
-          { id: 'm2', senderId: 'marcus', senderName: 'Marcus Vance', senderPhotoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', text: 'Excellent. Let me cross-verify the layout with the schema rules on the server side.', timestamp: '10:15 AM' },
-          { id: 'm3', senderId: 'liam', senderName: 'Liam Sterling', senderPhotoURL: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', text: 'Can we also test the drawing whiteboard with the new styling brush today?', timestamp: '10:16 AM' }
-        ];
-
-        // Filter out any default that might conflict or exist
-        const nonConflictingDefaults = defaults.filter(d => 
-          !mappedReal.some(r => r.text === d.text)
-        );
-
-        return [...nonConflictingDefaults, ...mappedReal];
+    if (chatMessages) {
+      const mappedReal = chatMessages.map(msg => {
+        const isMe = msg.senderId === currentUser?.uid;
+        return {
+          id: msg.id,
+          senderId: isMe ? 'self' : msg.senderId,
+          senderName: msg.senderName,
+          senderPhotoURL: msg.senderPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.senderName}`,
+          text: msg.text,
+          timestamp: msg.timestamp
+        };
       });
+      setChatItems(mappedReal);
       
       // If the chat drawer isn't active, raise an unread badge
-      if (activeDrawer !== 'chat') {
+      if (activeDrawer !== 'chat' && chatMessages.length > 0) {
         setUnreadCount(u => u + 1);
       }
     }
@@ -614,63 +551,6 @@ export const MeetingRoom: React.FC = () => {
     }
   }, [chatItems, activeDrawer]);
 
-  // Soundwave mock simulation (Randomly toggle participant's active speaking highlight)
-  useEffect(() => {
-    const speakerInterval = setInterval(() => {
-      setParticipants(prev => prev.map(p => {
-        if (p.uid === 'self') return p; // Don't randomly speaking toggle self
-        // Random speaking trigger if audio is enabled
-        if (p.audioEnabled && Math.random() > 0.7) {
-          return { ...p, isSpeaking: !p.isSpeaking };
-        }
-        return p;
-      }));
-    }, 4000);
-    return () => clearInterval(speakerInterval);
-  }, []);
-
-  // Simulating custom smart responses in chat to look incredibly rich and realistic
-  const simulateBotResponse = (userMsg: string) => {
-    // Determine target bot
-    const botPool = [
-      { name: 'Aria Rose', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80', id: 'aria' },
-      { name: 'Marcus Vance', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', id: 'marcus' },
-      { name: 'Liam Sterling', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', id: 'liam' }
-    ];
-    const responder = botPool[Math.floor(Math.random() * botPool.length)];
-
-    setTimeout(() => {
-      setTypingUser(responder.name);
-    }, 1000);
-
-    setTimeout(() => {
-      setTypingUser(null);
-      const responses = [
-        `That sounds perfect! Let's incorporate it in the visual mockups.`,
-        `Completely agree. I'll document this requirement in the meeting spec PDF.`,
-        `Nice idea. I will run a local container compile to verify it compiles properly.`,
-        `Let me review that file again. It looks excellent!`,
-        `Should we update the project rules to reflect this sync?`
-      ];
-      const replyText = responses[Math.floor(Math.random() * responses.length)];
-      
-      const replyMsg = {
-        id: Math.random().toString(),
-        senderId: responder.id,
-        senderName: responder.name,
-        senderPhotoURL: responder.avatar,
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setChatItems(prev => [...prev, replyMsg]);
-      if (activeDrawer !== 'chat') {
-        setUnreadCount(u => u + 1);
-        addNotification(`New chat message from ${responder.name}`);
-      }
-    }, 3500);
-  };
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -683,9 +563,6 @@ export const MeetingRoom: React.FC = () => {
     } catch (err) {
       console.error("Failed to send real-time message:", err);
     }
-    
-    // Trigger mock smart typing reply
-    simulateBotResponse(typedText);
   };
 
   const handleLeave = async () => {
@@ -872,7 +749,7 @@ export const MeetingRoom: React.FC = () => {
           {/* Participant count indicator */}
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200/60 px-4 py-2 rounded-2xl text-xs font-semibold text-gray-700">
             <UsersIcon size={13} className="text-[#6B7280]" />
-            <span>{simulatedCount} connected</span>
+            <span>{participants.length} connected</span>
           </div>
 
           {/* Invite participants button */}
@@ -919,7 +796,7 @@ export const MeetingRoom: React.FC = () => {
 
           {/* SCREEN SHARE DOCK OR BALANCED TILES GRID */}
           <AnimatePresence mode="wait">
-            {isScreenSharing ? (
+            {isScreenSharingActive ? (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -928,51 +805,44 @@ export const MeetingRoom: React.FC = () => {
               >
                 {/* Large screen share board */}
                 <div className="flex-1 rounded-[24px] bg-white border border-gray-200 overflow-hidden relative flex flex-col justify-between p-6 shadow-sm">
-                  {/* Outer container image preview */}
-                  <div className="absolute inset-0 flex items-center justify-center p-6 bg-gray-50/50">
-                    <div className="w-full max-w-4xl aspect-video bg-white rounded-2xl border border-gray-200 p-4 flex flex-col justify-between font-mono text-xs leading-relaxed shadow-xl relative overflow-hidden">
-                      <div className="absolute inset-0 bg-cover bg-center opacity-[0.08]" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=1000&q=80')` }} />
-                      
-                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                        <div className="flex items-center gap-2 text-gray-700">
-                          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping"></span>
-                          <span className="font-bold">SyncMeet Live Presenter Workspace</span>
-                        </div>
-                        <span className="text-blue-600 font-bold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-mono">
-                          HD 1080p
-                        </span>
-                      </div>
-                      
-                      {/* Simulating code editing workspace */}
-                      <div className="flex-1 py-4 text-gray-700 overflow-hidden font-mono text-left space-y-2 text-xs">
-                        <p className="text-gray-400">// Synchronizing client interfaces in high definition...</p>
-                        <p className="text-blue-600">import <span className="text-[#111827]">{"{ webrtcMesh }"}</span> from <span className="text-emerald-600">"syncmeet-fidelity"</span>;</p>
-                        <p className="text-[#111827]">const connection = webrtcMesh.createHub({"{"} code: "{roomId || 'sm-huddle-sync'}" {"}"});</p>
-                        <p className="text-[#6B7280]">connection.on("mesh-ready", () =&gt; {"{"}</p>
-                        <p className="text-[#111827]">&nbsp;&nbsp;console.log("Dual stream pipeline established with 60 FPS feedback.");</p>
-                        <p className="text-[#111827]">&nbsp;&nbsp;attachLocalAudioContext();</p>
-                        <p className="text-[#6B7280]">{"});"}</p>
-                      </div>
-
-                      <div className="flex items-center justify-between border-t border-gray-100 pt-3 text-gray-400 text-[10px]">
-                        <span>60 FPS • High Fidelity • Latency: 12ms</span>
-                        <span>Client UTF-8 Stream</span>
-                      </div>
-                    </div>
+                  {/* Outer container stream container */}
+                  <div className="absolute inset-0 flex items-center justify-center p-6 bg-[#0F172A]">
+                    {isLocalScreenSharing && screenStream ? (
+                      <MeetingVideo stream={screenStream} isMuted={true} isSelf={true} className="w-full h-full rounded-2xl object-contain shadow-xl" />
+                    ) : (
+                      (() => {
+                        const remoteSharer = activeParticipants.find(p => p.uid !== currentUser?.uid && p.screenShareEnabled);
+                        const remoteStream = remoteSharer && (remoteSharer.peerId ? remoteStreams[remoteSharer.peerId] : remoteStreams[remoteSharer.uid]);
+                        if (remoteStream) {
+                          return <MeetingVideo stream={remoteStream} isMuted={false} isSelf={false} className="w-full h-full rounded-2xl object-contain shadow-xl" />;
+                        }
+                        return (
+                          <div className="text-center space-y-4 text-white">
+                            <Monitor size={48} className="mx-auto text-blue-500 animate-pulse" />
+                            <p className="text-sm font-semibold">Waiting for screen sharing stream...</p>
+                          </div>
+                        );
+                      })()
+                    )}
                   </div>
 
-                  <div className="z-10 flex items-center justify-between w-full">
+                  <div className="z-10 flex items-center justify-between w-full mt-auto">
                     <span className="text-xs font-bold bg-blue-50 border border-blue-100 px-3.5 py-1.5 rounded-full text-blue-600 flex items-center gap-2 shadow-sm">
                       <Monitor size={13} className="animate-pulse text-blue-500" />
-                      <span>You are presenting your screen</span>
+                      <span>{isLocalScreenSharing ? "You are presenting your screen" : `${remoteScreenSharer?.displayName || 'Someone'} is sharing screen`}</span>
                     </span>
                     
-                    <button 
-                      onClick={() => setIsScreenSharing(false)}
-                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-bold border border-red-100 transition-colors cursor-pointer"
-                    >
-                      STOP SHARING
-                    </button>
+                    {isLocalScreenSharing && (
+                      <button 
+                        onClick={async () => {
+                          await stopScreenShare();
+                          toggleScreenShare();
+                        }}
+                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-bold border border-red-100 transition-colors cursor-pointer"
+                      >
+                        STOP SHARING
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1040,10 +910,29 @@ export const MeetingRoom: React.FC = () => {
                       {/* Video feedback placeholder */}
                       {showActualVideoMockup ? (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          {p.uid === 'self' && localStream ? (
-                            <MeetingVideo stream={localStream} isMuted={true} isSelf={true} className="absolute inset-0 w-full h-full rounded-[24px]" />
-                          ) : p.uid !== 'self' && remoteStreams[p.uid] ? (
-                            <MeetingVideo stream={remoteStreams[p.uid]} isMuted={false} isSelf={false} className="absolute inset-0 w-full h-full rounded-[24px]" />
+                          {p.uid === 'self' ? (
+                            (isLocalScreenSharing && screenStream) ? (
+                              <MeetingVideo stream={screenStream} isMuted={true} isSelf={true} className="absolute inset-0 w-full h-full rounded-[24px]" />
+                            ) : localStream ? (
+                              <MeetingVideo stream={localStream} isMuted={true} isSelf={true} className="absolute inset-0 w-full h-full rounded-[24px]" />
+                            ) : (
+                              <>
+                                {/* Ambient high fidelity background color bleed */}
+                                <div className="absolute inset-0 bg-cover bg-center opacity-[0.04] filter blur-xl" style={{ backgroundImage: `url('${p.avatar}')` }} />
+                                <div className="text-center space-y-4 z-10">
+                                  <motion.img 
+                                    initial={{ scale: 0.95, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    src={p.avatar} 
+                                    alt={p.displayName} 
+                                    className="w-16 h-16 md:w-20 md:h-20 rounded-[20px] border border-gray-200/50 object-cover shadow-lg bg-gray-50"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              </>
+                            )
+                          ) : (remoteStreams[p.peerId] || remoteStreams[p.uid]) ? (
+                            <MeetingVideo stream={remoteStreams[p.peerId] || remoteStreams[p.uid]} isMuted={false} isSelf={false} className="absolute inset-0 w-full h-full rounded-[24px]" />
                           ) : (
                             <>
                               {/* Ambient high fidelity background color bleed */}
@@ -1057,7 +946,6 @@ export const MeetingRoom: React.FC = () => {
                                   className="w-16 h-16 md:w-20 md:h-20 rounded-[20px] border border-gray-200/50 object-cover shadow-lg bg-gray-50"
                                   referrerPolicy="no-referrer"
                                 />
-                                {/* Live speaking voice decibel wave animation */}
                                 {p.isSpeaking && p.audioEnabled && (
                                   <div className="flex items-center justify-center gap-1.5 h-3">
                                     <span className="w-1 h-3 bg-blue-600 rounded-full animate-[bounce_0.6s_infinite]" />

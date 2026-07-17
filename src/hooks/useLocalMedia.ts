@@ -21,8 +21,25 @@ export function useLocalMedia({
   const streamRef = useRef<MediaStream | null>(null);
   const analyserCleanupRef = useRef<(() => void) | null>(null);
 
+  // Keep toggle states in refs to make startLocalStream completely stable
+  const isMicOnRef = useRef(isMicOn);
+  const isCameraOnRef = useRef(isCameraOn);
+
+  useEffect(() => {
+    isMicOnRef.current = isMicOn;
+  }, [isMicOn]);
+
+  useEffect(() => {
+    isCameraOnRef.current = isCameraOn;
+  }, [isCameraOn]);
+
+  const onToastRef = useRef(onToast);
+  useEffect(() => {
+    onToastRef.current = onToast;
+  });
+
   // Initialize and capture local media stream
-  const startLocalStream = useCallback(async () => {
+  const startLocalStream = useCallback(async (): Promise<MediaStream | null> => {
     // If we already have an active stream, stop it first
     if (streamRef.current) {
       mediaService.stopStream(streamRef.current);
@@ -36,8 +53,8 @@ export function useLocalMedia({
       setLocalStream(stream);
 
       // Apply initial mic and camera enabled states on tracks
-      mediaService.toggleAudio(stream, isMicOn);
-      mediaService.toggleVideo(stream, isCameraOn);
+      mediaService.toggleAudio(stream, isMicOnRef.current);
+      mediaService.toggleVideo(stream, isCameraOnRef.current);
 
       // Initialize speaking volume analyser
       if (analyserCleanupRef.current) {
@@ -47,9 +64,10 @@ export function useLocalMedia({
         setIsLocalSpeaking(isSpeaking);
       });
 
-      if (onToast) {
-        onToast("Camera and microphone initialized successfully.");
+      if (onToastRef.current) {
+        onToastRef.current("Camera and microphone initialized successfully.");
       }
+      return stream;
     } catch (err: any) {
       let errorMessage = "Could not access camera or microphone.";
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -59,8 +77,8 @@ export function useLocalMedia({
       }
       
       setMediaError(errorMessage);
-      if (onToast) {
-        onToast(errorMessage);
+      if (onToastRef.current) {
+        onToastRef.current(errorMessage);
       }
 
       // Fallback: Try audio-only if full video fails
@@ -69,7 +87,7 @@ export function useLocalMedia({
         streamRef.current = audioOnlyStream;
         setLocalStream(audioOnlyStream);
         setIsCameraOn(false);
-        mediaService.toggleAudio(audioOnlyStream, isMicOn);
+        mediaService.toggleAudio(audioOnlyStream, isMicOnRef.current);
         
         if (analyserCleanupRef.current) {
           analyserCleanupRef.current();
@@ -79,9 +97,10 @@ export function useLocalMedia({
         });
         
         setMediaError("Using microphone-only fallback (Camera blocked or unavailable).");
-        if (onToast) {
-          onToast("Microphone active; camera unavailable.");
+        if (onToastRef.current) {
+          onToastRef.current("Microphone active; camera unavailable.");
         }
+        return audioOnlyStream;
       } catch (fallbackErr) {
         // Complete device blockage: create an empty dummy stream to prevent UI crashes
         const canvas = document.createElement('canvas');
@@ -99,12 +118,14 @@ export function useLocalMedia({
           setLocalStream(dummyStream);
           setIsMicOn(false);
           setIsCameraOn(false);
+          return dummyStream;
         } catch (dummyErr) {
           console.warn("Failed to create dummy canvas fallback stream:", dummyErr);
+          return null;
         }
       }
     }
-  }, [isMicOn, isCameraOn, onToast]);
+  }, []);
 
   // Clean up stream tracks
   const stopLocalStream = useCallback(() => {
